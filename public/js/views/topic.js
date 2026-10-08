@@ -36,6 +36,8 @@ export async function renderTopic({ main, id }) {
       const imgBox = h('div', { class: 'media-preview' });
       const ipaIn = h('input', { type: 'text', value: cur.ipa || '', placeholder: '/ˈæp.əl/' });
       const status = h('p', { class: 'muted small' });
+      const promptIn = h('textarea', { rows: 3, class: 'mono', 'aria-label': 'Запрос для ИИ' });
+      api.imagePrompt(card.id).then((r) => { promptIn.value = r.prompt; }).catch(() => {});
       const drawImg = () => {
         clear(imgBox).append(cur.image ? h('img', { src: `/images/${cur.image}`, alt: `Картинка к «${cur.term}»` }) : h('p', { class: 'muted' }, 'Картинки пока нет'));
       };
@@ -49,10 +51,11 @@ export async function renderTopic({ main, id }) {
       return h('div', { class: 'stack' },
         imgBox,
         h('div', { class: 'row gap wrap' },
-          h('button', { class: 'btn primary', onClick: () => run('Генерирую картинку, это может занять до минуты…', () => api.genImage(card.id)) }, cur.image ? 'Пересоздать (ИИ)' : 'Сгенерировать (ИИ)'),
+          h('button', { class: 'btn primary', onClick: () => run('Генерирую картинку, это может занять до минуты…', () => api.genImage(card.id, promptIn.value)) }, cur.image ? 'Пересоздать (ИИ)' : 'Сгенерировать (ИИ)'),
           h('button', { class: 'btn', onClick: () => file.click() }, 'Загрузить свою'),
           h('button', { class: 'btn danger-ghost', onClick: () => run('Удаляю…', () => api.delImage(card.id)) }, 'Убрать')),
         file,
+        field('Запрос для ИИ', promptIn, 'Можно поправить и написать по-английски: так картинки получаются точнее'),
         lang === 'en' ? field('Транскрипция (IPA)', h('div', { class: 'row gap' }, ipaIn,
           h('button', { class: 'btn', type: 'button', onClick: () => run('Ищу в словаре…', async () => { const c = await api.fetchIpa(card.id); if (!c.ipa) toast('В словаре такого слова нет — введите вручную', 'info'); return c; }) }, 'Найти'),
           h('button', { class: 'btn', type: 'button', onClick: () => run('Сохраняю…', () => api.editCard(card.id, { term: cur.term, definition: cur.definition, ipa: ipaIn.value })) }, 'Сохранить'))) : null,

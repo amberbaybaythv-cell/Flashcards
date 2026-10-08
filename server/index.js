@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { db, ROOT, IMAGES_DIR } from './db.js';
 import { applyAnswer, localDate, addDays, INTERVALS } from './leitner.js';
 import {
-  enrichIpa, enrichImage, enqueue, queueStatus, saveImage, removeImageFile, extFor, imageProviderName,
+  enrichIpa, enrichImage, enqueue, queueStatus, saveImage, removeImageFile, extFor, imageProviderName, imageConfigured, buildPrompt,
 } from './enrich.js';
 
 const app = express();
@@ -41,7 +41,7 @@ app.get('/api/config', (req, res) => {
   const p = imageProviderName();
   res.json({
     imageProvider: p,
-    imageConfigured: p !== 'openai' || !!process.env.OPENAI_API_KEY,
+    imageConfigured: imageConfigured(),
     intervals: INTERVALS,
   });
 });
@@ -187,9 +187,15 @@ app.post('/api/cards/:id/ipa', wrap(async (req, res) => {
   }
 }));
 
+app.get('/api/cards/:id/image/prompt', (req, res) => {
+  const c = db.prepare('SELECT term, definition FROM cards WHERE id=?').get(num(req.params.id));
+  if (!c) return bad(res, 'Карточка не найдена', 404);
+  res.json({ prompt: buildPrompt(c.term, c.definition) });
+});
+
 app.post('/api/cards/:id/image/generate', wrap(async (req, res) => {
   try {
-    const card = await enrichImage(num(req.params.id));
+    const card = await enrichImage(num(req.params.id), str(req.body?.prompt));
     if (!card) return bad(res, 'Карточка не найдена', 404);
     res.json(card);
   } catch (e) {

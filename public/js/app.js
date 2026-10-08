@@ -174,6 +174,7 @@ export function watchQueue(started = false) {
     if (s.active) wasActive = true;
     else {
       wasActive = false;
+      if (!s.failed) setTimeout(() => { bar.hidden = true; }, 6000);
       clearInterval(queueTimer); queueTimer = null;
       await refreshTree();
       window.dispatchEvent(new Event('cards-changed'));
