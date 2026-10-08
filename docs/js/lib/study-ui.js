@@ -19,7 +19,7 @@ export function termBlock(card) {
   return h('div', { class: 'term-block' },
     h('div', { class: 'term-line' }, h('span', { class: 'term-text' }, card.term), speakBtn(card)),
     card.ipa ? h('div', { class: 'ipa big' }, card.ipa) : null,
-    card.image ? h('img', { class: 'assoc', src: `/images/${card.image}`, alt: `Картинка-ассоциация к «${card.term}»` }) : null);
+    card.image ? h('img', { class: 'assoc', src: card.image, alt: `Картинка-ассоциация к «${card.term}»` }) : null);
 }
 
 export const defBlock = (text) => h('div', { class: 'def-text' }, text);

@@ -1,6 +1,6 @@
 import { h } from '../ui.js';
 import { api } from '../api.js';
-import { state, openModuleForm, openTopicForm } from '../app.js';
+import { state, openModuleForm, openTopicForm, refreshTree, render } from '../app.js';
 import { openStudyLauncher } from './launcher.js';
 import { cardsWord } from '../ui.js';
 import { statsBlock } from './stats.js';
@@ -18,7 +18,9 @@ export async function renderHome({ main }) {
   if (!modules.length) {
     main.append(h('div', { class: 'empty' }, h('h2', null, 'Пока пусто'),
       h('p', { class: 'muted' }, 'Модуль — это набор тем, например «English B2». В теме вы вставляете сплошной текст «слово - перевод», и карточки готовы.'),
-      h('button', { class: 'btn primary', onClick: () => openModuleForm() }, '+ Создать модуль')));
+      h('div', { class: 'row gap center-row wrap' },
+        h('button', { class: 'btn primary', onClick: () => openModuleForm() }, '+ Создать модуль'),
+        h('button', { class: 'btn', onClick: async () => { await api.loadDemo(); await refreshTree(); render(); } }, 'Загрузить демо-модуль'))));
     return;
   }
 
@@ -38,6 +40,12 @@ export async function renderHome({ main }) {
   main.append(grid);
 
   if (totalCards) {
+    const last = (() => { try { return localStorage.getItem('lastBackup'); } catch { return null; } })();
+    const old = !last || (Date.now() - new Date(last).getTime()) / 864e5 > 30;
+    if (old) {
+      main.append(h('p', { class: 'panel small', style: 'margin-top:16px' }, last ? `Последняя резервная копия была ${last}. ` : 'Резервная копия ещё не делалась. ',
+        h('a', { href: '#/settings' }, 'Сделать копию'), ' — данные хранятся только на этом устройстве.'));
+    }
     const holder = h('section', { class: 'section' }, h('h2', null, 'Статистика'));
     main.append(holder);
     holder.append(statsBlock(await api.stats('all', 0)));

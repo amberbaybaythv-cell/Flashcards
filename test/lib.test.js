@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCards, parseSections } from '../public/js/lib/parse.js';
-import { checkAnswer, levenshtein } from '../public/js/lib/fuzzy.js';
-import { applyAnswer, addDays } from '../server/leitner.js';
+import { parseCards, parseSections } from '../docs/js/lib/parse.js';
+import { checkAnswer, levenshtein } from '../docs/js/lib/fuzzy.js';
+import { applyAnswer, addDays } from '../docs/js/lib/leitner.js';
 
 test('parse: тире, двоеточие, tab, свой символ', () => {
   assert.deepEqual(parseCards('cat - кошка\ndog – собака').map((c) => [c.term, c.definition]), [['cat', 'кошка'], ['dog', 'собака']]);
@@ -43,4 +43,23 @@ test('leitner: коробки и интервалы', () => {
   assert.deepEqual(applyAnswer({ box: 5, learned: 0 }, true, '2026-01-01'), { box: 5, learned: 1, next_review: '2026-01-17' });
   assert.deepEqual(applyAnswer({ box: 5, learned: 1 }, false, '2026-01-01'), { box: 1, learned: 0, next_review: '2026-01-02' });
   assert.equal(addDays('2026-12-31', 1), '2027-01-01');
+});
+
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+test('sw.js: кеш содержит все файлы приложения (запустите npm run build:sw, если тест упал)', () => {
+  const docs = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'docs');
+  const sw = fs.readFileSync(path.join(docs, 'sw.js'), 'utf8');
+  const listed = new Set(JSON.parse(/const FILES = (\[[\s\S]*?\]);/.exec(sw)[1]));
+  const all = [];
+  (function walk(d) {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const p = path.join(d, e.name);
+      if (e.isDirectory()) walk(p); else if (!['sw.js', '.nojekyll'].includes(e.name)) all.push('./' + path.relative(docs, p).split(path.sep).join('/'));
+    }
+  })(docs);
+  assert.deepEqual(all.filter((f) => !listed.has(f)), []);
+  assert.deepEqual([...listed].filter((f) => f !== './' && !all.includes(f)), []);
 });

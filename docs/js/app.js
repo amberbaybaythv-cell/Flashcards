@@ -5,6 +5,7 @@ import { renderModule } from './views/module.js';
 import { renderTopic } from './views/topic.js';
 import { renderSearch } from './views/search.js';
 import { renderStudy } from './views/study.js';
+import { renderSettings } from './views/settings.js';
 import { openImportModule } from './views/importer.js';
 
 export const state = { tree: { modules: [] }, config: {} };
@@ -43,6 +44,7 @@ export async function render() {
     else if (parts[0] === 't') res = renderTopic(ctx);
     else if (parts[0] === 'search') res = renderSearch(ctx);
     else if (parts[0] === 'study') res = renderStudy(ctx);
+    else if (parts[0] === 'settings') res = renderSettings(ctx);
     else main.append(h('p', { class: 'muted' }, 'Страница не найдена'));
     const out = await res;
     cleanup = typeof out === 'function' ? out : null;
@@ -144,6 +146,7 @@ function renderSidebar() {
       h('button', { class: 'btn primary block', onClick: () => openModuleForm() }, '+ Новый модуль'),
       h('div', { class: 'row gap' },
         h('button', { class: 'btn grow', onClick: () => openImportModule() }, 'Импорт'),
+        h('a', { class: 'btn', href: '#/settings', 'aria-label': 'Настройки', title: 'Настройки и резервная копия' }, '⚙'),
         h('button', { class: 'btn', 'aria-label': 'Сменить тему оформления', title: 'Светлая / тёмная тема', onClick: () => {
           const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
           applyTheme(t); store.set('theme', t);
@@ -187,9 +190,13 @@ export function watchQueue(started = false) {
 /* ---------- Старт ---------- */
 $('#menu-btn').addEventListener('click', () => document.body.classList.toggle('menu-open'));
 window.addEventListener('hashchange', render);
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  navigator.serviceWorker.register('./sw.js').catch(() => { /* офлайн-режим недоступен, приложение всё равно работает */ });
+}
 (async () => {
   try {
     [state.config] = await Promise.all([api.config(), refreshTree()]);
+    if (state.config.storage && !state.config.storage.persistent) toast('Данные не сохраняются: хранилище браузера недоступно (приватный режим?)', 'error');
   } catch (e) { toast(e.message, 'error'); }
   await render();
   watchQueue();

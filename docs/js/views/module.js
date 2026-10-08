@@ -1,4 +1,4 @@
-import { h, confirmDialog, toast, cardsWord, download } from '../ui.js';
+import { h, confirmDialog, toast, cardsWord } from '../ui.js';
 import { api } from '../api.js';
 import { findModule, refreshTree, go, openModuleForm, openTopicForm } from '../app.js';
 import { openStudyLauncher } from './launcher.js';
@@ -20,8 +20,8 @@ export async function renderModule({ main, id }) {
           m.due ? `Учить модуль · ${m.due} к повторению` : 'Учить модуль'),
         h('button', { class: 'btn', onClick: () => openTopicForm(m.id) }, '+ Тема'),
         h('button', { class: 'btn', onClick: () => openModuleForm(m) }, 'Настройки'),
-        h('button', { class: 'btn', onClick: () => download(`/api/modules/${m.id}/export.json`) }, 'Экспорт JSON'),
-        h('button', { class: 'btn', onClick: () => download(`/api/modules/${m.id}/export.txt`) }, 'Экспорт текст'),
+        h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'json') }, 'Экспорт JSON'),
+        h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'txt') }, 'Экспорт текст'),
         h('button', { class: 'btn danger-ghost', onClick: async () => {
           if (!(await confirmDialog(`Удалить модуль «${m.name}» вместе со всеми темами и карточками (${m.total})? Это нельзя отменить.`))) return;
           try { await api.delModule(m.id); await refreshTree(); toast('Модуль удалён'); go('#/'); } catch (e) { toast(e.message, 'error'); }

@@ -1,4 +1,4 @@
-import { h, clear, confirmDialog, modal, toast, cardsWord, download, field } from '../ui.js';
+import { h, clear, confirmDialog, modal, toast, cardsWord, field } from '../ui.js';
 import { api } from '../api.js';
 import { state, refreshTree, go, watchQueue, openTopicForm } from '../app.js';
 import { openStudyLauncher } from './launcher.js';
@@ -38,8 +38,10 @@ export async function renderTopic({ main, id }) {
       const status = h('p', { class: 'muted small' });
       const promptIn = h('textarea', { rows: 3, class: 'mono', 'aria-label': 'Запрос для ИИ' });
       api.imagePrompt(card.id).then((r) => { promptIn.value = r.prompt; }).catch(() => {});
+      const genBtn = h('button', { class: 'btn primary', onClick: () => run('Генерирую картинку, это может занять до минуты…', () => api.genImage(card.id, promptIn.value)) });
       const drawImg = () => {
-        clear(imgBox).append(cur.image ? h('img', { src: `/images/${cur.image}`, alt: `Картинка к «${cur.term}»` }) : h('p', { class: 'muted' }, 'Картинки пока нет'));
+        clear(imgBox).append(cur.image ? h('img', { src: cur.image, alt: `Картинка к «${cur.term}»` }) : h('p', { class: 'muted' }, 'Картинки пока нет'));
+        genBtn.textContent = cur.image ? 'Пересоздать (ИИ)' : 'Сгенерировать (ИИ)';
       };
       const run = async (label, fn) => {
         status.textContent = label;
@@ -51,7 +53,7 @@ export async function renderTopic({ main, id }) {
       return h('div', { class: 'stack' },
         imgBox,
         h('div', { class: 'row gap wrap' },
-          h('button', { class: 'btn primary', onClick: () => run('Генерирую картинку, это может занять до минуты…', () => api.genImage(card.id, promptIn.value)) }, cur.image ? 'Пересоздать (ИИ)' : 'Сгенерировать (ИИ)'),
+          genBtn,
           h('button', { class: 'btn', onClick: () => file.click() }, 'Загрузить свою'),
           h('button', { class: 'btn danger-ghost', onClick: () => run('Удаляю…', () => api.delImage(card.id)) }, 'Убрать')),
         file,
@@ -70,7 +72,7 @@ export async function renderTopic({ main, id }) {
       clear(tr).append(
         h('td', { class: 'c-term' }, h('b', null, c.term), c.ipa ? h('div', { class: 'ipa' }, c.ipa) : null),
         h('td', { class: 'c-def' }, c.definition),
-        h('td', { class: 'c-img' }, c.image ? h('img', { class: 'thumb', src: `/images/${c.image}`, alt: '', loading: 'lazy' }) : null),
+        h('td', { class: 'c-img' }, c.image ? h('img', { class: 'thumb', src: c.image, alt: '', loading: 'lazy' }) : null),
         h('td', null, h('span', { class: `box ${BOX_COLORS[c.box - 1]}`, title: c.learned ? 'Выучена' : `Коробка ${c.box}` }, c.learned ? '✓' : c.box)),
         h('td', { class: 'c-act' },
           speechSupported ? h('button', { class: 'icon-btn', 'aria-label': 'Озвучить', title: 'Озвучить', onClick: () => speak(c.term, lang) }, '🔊') : null,
@@ -110,7 +112,7 @@ export async function renderTopic({ main, id }) {
         h('button', { class: 'btn primary', disabled: !cards.length, onClick: () => openStudyLauncher({ scope: 'topic', id, title: topic.name }) }, 'Учить'),
         h('button', { class: 'btn', onClick: () => openBulkImport(topic, reload) }, 'Импорт текстом'),
         h('button', { class: 'btn', onClick: () => openTopicForm(topic.module_id, topic) }, 'Переименовать'),
-        h('button', { class: 'btn', disabled: !cards.length, onClick: () => download(`/api/topics/${id}/export.txt`) }, 'Экспорт текст'),
+        h('button', { class: 'btn', disabled: !cards.length, onClick: () => api.downloadTopic(id) }, 'Экспорт текст'),
         h('button', { class: 'btn danger-ghost', onClick: async () => {
           if (!(await confirmDialog(`Удалить тему «${topic.name}» и ${cardsWord(cards.length)}? Это нельзя отменить.`))) return;
           try { await api.delTopic(id); await refreshTree(); toast('Тема удалена'); go(`#/m/${topic.module_id}`); } catch (e) { toast(e.message, 'error'); }
@@ -137,7 +139,7 @@ export async function renderTopic({ main, id }) {
       cards.length ? h('div', { class: 'row gap wrap small toolbar' },
         lang === 'en' ? h('button', { class: 'btn small', disabled: !missingIpa, onClick: enrich({ ipa: true }, 'Транскрипции') }, `Подтянуть транскрипции${missingIpa ? ` (${missingIpa})` : ''}`) : null,
         h('button', { class: 'btn small', disabled: !missingImg, onClick: enrich({ images: true }, 'Картинки') }, `Сгенерировать картинки${missingImg ? ` (${missingImg})` : ''}`),
-        state.config.imageConfigured === false ? h('span', { class: 'badge warn' }, 'Для провайдера картинок не задан ключ в .env') : null) : null,
+        state.config.imageConfigured === false ? h('span', { class: 'badge warn' }, h('a', { href: '#/settings' }, 'Для картинок нужен ключ: откройте «Настройки»')) : null) : null,
       cards.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'cards-table' },
         h('thead', null, h('tr', null, h('th', null, 'Термин'), h('th', null, 'Определение'), h('th', null), h('th', { title: 'Коробка Лейтнера' }, 'Кор.'), h('th', null))),
         h('tbody', null, cards.map(rowFor)))) :
