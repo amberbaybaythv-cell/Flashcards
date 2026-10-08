@@ -1,4 +1,4 @@
-import Database from 'better-sqlite3';
+import { DatabaseSync } from 'node:sqlite'; // встроенный SQLite, ничего компилировать не нужно
 import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -8,11 +8,27 @@ export const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, 'data');
 export const IMAGES_DIR = path.join(DATA_DIR, 'images');
 fs.mkdirSync(IMAGES_DIR, { recursive: true });
 
-export const db = new Database(path.join(DATA_DIR, 'app.db'));
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const raw = new DatabaseSync(path.join(DATA_DIR, 'app.db'));
+raw.exec('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
 // LIKE в SQLite не умеет регистронезависимый поиск по кириллице
-db.function('ulower', { deterministic: true }, (s) => (s == null ? null : String(s).toLowerCase()));
+raw.function('ulower', { deterministic: true }, (s) => (s == null ? null : String(s).toLowerCase()));
+
+export const db = {
+  exec: (sql) => raw.exec(sql),
+  prepare: (sql) => raw.prepare(sql),
+  /** Оборачивает функцию в транзакцию (как у better-sqlite3). */
+  transaction: (fn) => (...args) => {
+    raw.exec('BEGIN');
+    try {
+      const result = fn(...args);
+      raw.exec('COMMIT');
+      return result;
+    } catch (e) {
+      raw.exec('ROLLBACK');
+      throw e;
+    }
+  },
+};
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS modules (
