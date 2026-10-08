@@ -1,0 +1,17 @@
+{
+  "name": "quizlet-local",
+  "version": "1.0.0",
+  "description": "Локальный аналог Quizlet: модули, темы, флеш-карточки, система Лейтнера",
+  "type": "module",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "seed": "node server/seed.js",
+    "test": "node --test test/*.test.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.2.1"
+  }
+}
