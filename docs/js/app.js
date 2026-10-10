@@ -17,6 +17,8 @@ function applyTheme(t) { document.documentElement.dataset.theme = t; }
 export const ACCENTS = [
   { id: 'violet', name: 'Фиолетовый', color: '#4f46e5', meta: '#4f46e5' },
   { id: 'sand', name: 'Песочный', color: '#EED9C4', meta: '#EED9C4' },
+  { id: 'wood', name: 'Старое дерево', color: '#9E7655', meta: '#9E7655' },
+  { id: 'espresso', name: 'Эспрессо', color: '#644736', meta: '#644736' },
 ];
 export const currentAccent = () => (ACCENTS.some((a) => a.id === store.get('accent', 'violet')) ? store.get('accent', 'violet') : 'violet');
 export function applyAccent(id) {
@@ -182,7 +184,7 @@ function renderSidebar() {
         h('button', { class: 'btn', 'aria-label': 'Сменить тему оформления', title: 'Светлая / тёмная тема', onClick: () => {
           const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
           applyTheme(t); store.set('theme', t);
-        } }, '◐'))));
+        } }, h('span', { class: 'emoji' }, '🌓')))));
 }
 
 /* ---------- Очередь фоновых задач (IPA / картинки) ---------- */

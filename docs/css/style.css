@@ -16,6 +16,11 @@
 /* Акцентные цвета (выбор в ⚙️ Настройки → Оформление). Светлый песочный: тёмный текст на кнопках, тёмный оттенок для ссылок и графиков */
 :root[data-accent="sand"] { --primary: #EED9C4; --primary-ink: #3b2a1b; --primary-soft: #f8eee3; --primary-text: #8a5a2b; --accent: #b98655; --hover-b: .95; }
 :root[data-accent="sand"][data-theme="dark"] { --primary: #EED9C4; --primary-ink: #2a1d12; --primary-soft: #3a2f25; --primary-text: #EED9C4; --accent: #d9b48c; }
+/* Старое дерево #9E7655 и Эспрессо #644736 (палитра пользователя). В тёмной теме подняты по яркости, чтобы кнопки не сливались с фоном */
+:root[data-accent="wood"] { --primary: #9E7655; --primary-ink: #1a0f07; --primary-soft: #f1e7de; --primary-text: #7d5a3f; --accent: #9E7655; }
+:root[data-accent="wood"][data-theme="dark"] { --primary: #b8916c; --primary-ink: #1c120b; --primary-soft: #372b21; --primary-text: #d9b896; --accent: #b8916c; }
+:root[data-accent="espresso"] { --primary: #644736; --primary-ink: #ffffff; --primary-soft: #eee5de; --primary-text: #644736; --accent: #644736; }
+:root[data-accent="espresso"][data-theme="dark"] { --primary: #a9856b; --primary-ink: #1c120b; --primary-soft: #33261e; --primary-text: #d6b9a3; --accent: #a9856b; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }

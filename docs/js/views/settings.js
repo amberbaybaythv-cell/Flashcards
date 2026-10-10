@@ -30,7 +30,7 @@ export async function renderSettings({ main }) {
     h('header', { class: 'page-head' }, h('div', null, h('h1', null, 'Настройки'), h('p', { class: 'muted' }, 'Всё хранится только на этом устройстве'))),
     h('section', { class: 'panel stack' },
       h('h2', null, 'Оформление'),
-      h('p', { class: 'muted small' }, 'Цвет кнопок, ссылок и графиков. Светлая и тёмная тема переключается кнопкой ◐ в боковой панели.'),
+      h('p', { class: 'muted small' }, 'Цвет кнопок, ссылок и графиков. Светлая и тёмная тема переключается кнопкой 🌓 в боковой панели.'),
       swatches),
     h('section', { class: 'panel stack', style: 'margin-top:16px' },
       h('h2', null, 'Картинки от ИИ'),
