@@ -1,7 +1,7 @@
 // Офлайн-режим: все файлы приложения кешируются при первой загрузке.
 // Список файлов и версия обновляются командой `npm run build:sw`.
 /* BUILD:START */
-const VERSION = 'c175f91c90';
+const VERSION = '9d82a1ef9b';
 const FILES = [
   "./",
   "./css/fonts.css",

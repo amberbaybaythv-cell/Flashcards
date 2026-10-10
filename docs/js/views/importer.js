@@ -105,7 +105,7 @@ export function openImportModule() {
       try {
         const content = await f.text();
         let res;
-        if (f.name.toLowerCase().endsWith('.json')) {
+        if (f.name.toLowerCase().endsWith('.json') || content.trimStart().startsWith('{')) { // JSON определяем и по содержимому: у скачанного файла могло потеряться расширение
           let data;
           try { data = JSON.parse(content); } catch { throw new Error('Файл повреждён: это не JSON'); }
           res = await api.importModule(data);
