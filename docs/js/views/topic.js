@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { state, refreshTree, go, watchQueue, openTopicForm } from '../app.js';
 import { openStudyLauncher } from './launcher.js';
 import { openBulkImport } from './importer.js';
-import { statsBlock } from './stats.js';
+import { statsSection } from './stats.js';
 import { speak, speechSupported } from '../lib/speech.js';
 
 const BOX_COLORS = ['b1', 'b2', 'b3', 'b4', 'b5'];
@@ -12,7 +12,7 @@ export async function renderTopic({ main, id }) {
   const topic = await api.topic(id);
   const lang = topic.module.term_lang;
   let cards = await api.cards(id);
-  const head = h('div'), body = h('div'), statsHolder = h('section', { class: 'section' });
+  const head = h('div'), body = h('div'), statsHolder = h('div');
   main.append(head, body, statsHolder);
 
   const onChanged = () => { if (document.body.contains(main)) reload(); };
@@ -27,7 +27,7 @@ export async function renderTopic({ main, id }) {
   async function drawStats() {
     clear(statsHolder);
     if (!cards.length) return;
-    statsHolder.append(h('h2', null, 'Статистика темы'), statsBlock(await api.stats('topic', id)));
+    statsHolder.append(statsSection('Статистика темы', 'topic', await api.stats('topic', id)));
   }
 
   function mediaDialog(card) {

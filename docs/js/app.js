@@ -1,5 +1,5 @@
 import { api } from './api.js';
-import { h, $, clear, toast, modal, field, cardsWord, store } from './ui.js';
+import { h, $, clear, toast, modal, field, cardsWord, store, confirmDialog } from './ui.js';
 import { renderHome } from './views/home.js';
 import { renderModule } from './views/module.js';
 import { renderTopic } from './views/topic.js';
@@ -13,6 +13,19 @@ let cleanup = null;
 
 /* ---------- Тема ---------- */
 function applyTheme(t) { document.documentElement.dataset.theme = t; }
+
+export const ACCENTS = [
+  { id: 'violet', name: 'Фиолетовый', color: '#4f46e5', meta: '#4f46e5' },
+  { id: 'sand', name: 'Песочный', color: '#EED9C4', meta: '#EED9C4' },
+];
+export const currentAccent = () => (ACCENTS.some((a) => a.id === store.get('accent', 'violet')) ? store.get('accent', 'violet') : 'violet');
+export function applyAccent(id) {
+  const a = ACCENTS.find((x) => x.id === id) || ACCENTS[0];
+  document.documentElement.dataset.accent = a.id;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', a.meta);
+  store.set('accent', a.id);
+}
+applyAccent(currentAccent());
 applyTheme(store.get('theme', matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
 
 /* ---------- Данные ---------- */
@@ -80,8 +93,27 @@ export function openModuleForm(m) {
       field('Название', name), field('Описание', desc),
       h('div', { class: 'grid2' }, field('Язык терминов', tl, 'Для озвучки и транскрипции'), field('Язык определений', dl)),
       h('div', { class: 'row end gap' }, h('button', { type: 'button', class: 'btn', onClick: close }, 'Отмена'), h('button', { class: 'btn primary', type: 'submit' }, 'Сохранить')));
-    return form;
+    if (!m) return form;
+    return h('div', { class: 'stack' }, form,
+      h('div', { class: 'stack actions-box' },
+        h('h3', null, 'Действия с модулем'),
+        h('div', { class: 'row gap wrap' },
+          h('button', { class: 'btn', onClick: () => { close(); openTopicForm(m.id); } }, '+ Тема'),
+          h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'json') }, 'Экспорт JSON'),
+          h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'txt') }, 'Экспорт текст'),
+          h('button', { class: 'btn danger-ghost', onClick: () => deleteModule(m, close) }, 'Удалить модуль'))));
   });
+}
+
+async function deleteModule(m, closeSettings) {
+  if (!(await confirmDialog(`Удалить модуль «${m.name}» вместе со всеми темами и карточками (${m.total ?? 0})? Это нельзя отменить.`))) return;
+  try {
+    await api.delModule(m.id);
+    closeSettings?.();
+    await refreshTree();
+    toast('Модуль удалён');
+    go('#/');
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 export function openTopicForm(moduleId, t) {
@@ -146,7 +178,7 @@ function renderSidebar() {
       h('button', { class: 'btn primary block', onClick: () => openModuleForm() }, '+ Новый модуль'),
       h('div', { class: 'row gap' },
         h('button', { class: 'btn grow', onClick: () => openImportModule() }, 'Импорт'),
-        h('a', { class: 'btn', href: '#/settings', 'aria-label': 'Настройки', title: 'Настройки и резервная копия' }, '⚙'),
+        h('a', { class: 'btn', href: '#/settings', 'aria-label': 'Настройки', title: 'Настройки, оформление и резервная копия' }, h('span', { class: 'emoji' }, '⚙️')),
         h('button', { class: 'btn', 'aria-label': 'Сменить тему оформления', title: 'Светлая / тёмная тема', onClick: () => {
           const t = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
           applyTheme(t); store.set('theme', t);

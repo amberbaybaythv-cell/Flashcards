@@ -66,6 +66,16 @@ export function confirmDialog(text, { okLabel = 'Удалить', danger = true 
   });
 }
 
+/** Сворачиваемый блок со стрелкой справа от заголовка. Состояние запоминается по key. */
+export function fold(title, body, { key, open = false, level = 'h3', cls = '' } = {}) {
+  const saved = key ? store.get('fold:' + key, open) : open;
+  const el = h('details', { class: `fold ${cls}`.trim(), open: !!saved },
+    h('summary', null, h(level, null, title), h('span', { class: 'chev', 'aria-hidden': 'true' })),
+    h('div', { class: 'fold-body' }, body));
+  if (key) el.addEventListener('toggle', () => store.set('fold:' + key, el.open));
+  return el;
+}
+
 export function field(label, input, hint) {
   return h('label', { class: 'field' }, h('span', { class: 'field-label' }, label), input, hint && h('span', { class: 'hint' }, hint));
 }

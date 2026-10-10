@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { state, openModuleForm, openTopicForm, refreshTree, render } from '../app.js';
 import { openStudyLauncher } from './launcher.js';
 import { cardsWord } from '../ui.js';
-import { statsBlock } from './stats.js';
+import { statsSection } from './stats.js';
 
 export async function renderHome({ main }) {
   const modules = state.tree.modules;
@@ -46,8 +46,6 @@ export async function renderHome({ main }) {
       main.append(h('p', { class: 'panel small', style: 'margin-top:16px' }, last ? `Последняя резервная копия была ${last}. ` : 'Резервная копия ещё не делалась. ',
         h('a', { href: '#/settings' }, 'Сделать копию'), ' — данные хранятся только на этом устройстве.'));
     }
-    const holder = h('section', { class: 'section' }, h('h2', null, 'Статистика'));
-    main.append(holder);
-    holder.append(statsBlock(await api.stats('all', 0)));
+    main.append(statsSection('Статистика', 'home', await api.stats('all', 0)));
   }
 }

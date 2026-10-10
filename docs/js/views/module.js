@@ -1,8 +1,8 @@
-import { h, confirmDialog, toast, cardsWord } from '../ui.js';
+import { h, cardsWord } from '../ui.js';
 import { api } from '../api.js';
-import { findModule, refreshTree, go, openModuleForm, openTopicForm } from '../app.js';
+import { findModule, openModuleForm, openTopicForm } from '../app.js';
 import { openStudyLauncher } from './launcher.js';
-import { statsBlock } from './stats.js';
+import { statsSection } from './stats.js';
 
 const LANG = { en: 'Английский', ru: 'Русский' };
 
@@ -18,14 +18,7 @@ export async function renderModule({ main, id }) {
       h('div', { class: 'row gap wrap' },
         h('button', { class: 'btn primary', disabled: !m.total, onClick: () => openStudyLauncher({ scope: 'module', id: m.id, title: m.name }) },
           m.due ? `Учить модуль · ${m.due} к повторению` : 'Учить модуль'),
-        h('button', { class: 'btn', onClick: () => openTopicForm(m.id) }, '+ Тема'),
-        h('button', { class: 'btn', onClick: () => openModuleForm(m) }, 'Настройки'),
-        h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'json') }, 'Экспорт JSON'),
-        h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'txt') }, 'Экспорт текст'),
-        h('button', { class: 'btn danger-ghost', onClick: async () => {
-          if (!(await confirmDialog(`Удалить модуль «${m.name}» вместе со всеми темами и карточками (${m.total})? Это нельзя отменить.`))) return;
-          try { await api.delModule(m.id); await refreshTree(); toast('Модуль удалён'); go('#/'); } catch (e) { toast(e.message, 'error'); }
-        } }, 'Удалить'))));
+        h('button', { class: 'btn emoji-btn', 'aria-label': 'Настройки модуля', title: 'Настройки модуля: темы, экспорт, удаление', onClick: () => openModuleForm(m) }, h('span', { class: 'emoji' }, '⚙️')))));
 
   if (!m.topics.length) {
     main.append(h('div', { class: 'empty' }, h('h2', null, 'В модуле пока нет тем'),
@@ -43,5 +36,5 @@ export async function renderModule({ main, id }) {
     main.append(list);
   }
 
-  if (m.total) main.append(h('section', { class: 'section' }, h('h2', null, 'Статистика модуля'), statsBlock(await api.stats('module', m.id))));
+  if (m.total) main.append(statsSection('Статистика модуля', 'module', await api.stats('module', m.id)));
 }

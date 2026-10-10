@@ -1,7 +1,7 @@
 import { h, field, toast } from '../ui.js';
 import { api } from '../api.js';
 import { getSettings, saveSettings } from '../lib/enrich.js';
-import { state, refreshTree } from '../app.js';
+import { state, refreshTree, ACCENTS, currentAccent, applyAccent } from '../app.js';
 
 const PROVIDERS = [
   ['huggingface', 'Hugging Face (бесплатный токен, рекомендуется)'],
@@ -17,9 +17,22 @@ export async function renderSettings({ main }) {
   const pl = h('input', { type: 'password', value: s.pollinationsToken || '', placeholder: 'необязательно', autocomplete: 'off' });
   const last = (() => { try { return localStorage.getItem('lastBackup'); } catch { return null; } })();
 
+  const swatches = h('div', { class: 'swatches', role: 'radiogroup', 'aria-label': 'Акцентный цвет' });
+  const drawSwatches = () => {
+    swatches.replaceChildren(...ACCENTS.map((a) => h('button', {
+      class: 'swatch', role: 'radio', 'aria-checked': String(currentAccent() === a.id),
+      onClick: () => { applyAccent(a.id); drawSwatches(); },
+    }, h('span', { class: 'dot', style: `background:${a.color}` }), a.name)));
+  };
+  drawSwatches();
+
   main.append(
     h('header', { class: 'page-head' }, h('div', null, h('h1', null, 'Настройки'), h('p', { class: 'muted' }, 'Всё хранится только на этом устройстве'))),
     h('section', { class: 'panel stack' },
+      h('h2', null, 'Оформление'),
+      h('p', { class: 'muted small' }, 'Цвет кнопок, ссылок и графиков. Светлая и тёмная тема переключается кнопкой ◐ в боковой панели.'),
+      swatches),
+    h('section', { class: 'panel stack', style: 'margin-top:16px' },
       h('h2', null, 'Картинки от ИИ'),
       h('p', { class: 'muted small' }, 'Запросы идут из браузера напрямую к выбранному сервису, нужен интернет. Ключи хранятся только в этом браузере и никуда, кроме выбранного сервиса, не отправляются.'),
       field('Провайдер', provider),
