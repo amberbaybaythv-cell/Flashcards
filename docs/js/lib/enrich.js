@@ -23,7 +23,7 @@ export function imageConfigured() {
   return true;
 }
 
-async function timedFetch(url, opts = {}, ms = 20000) {
+export async function timedFetch(url, opts = {}, ms = 20000) {
   const ctl = new AbortController();
   const t = setTimeout(() => ctl.abort(), ms);
   try {

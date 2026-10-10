@@ -127,6 +127,20 @@ details.fold.section-fold { margin-top: 28px; }
 .actions-box { border-top: 1px solid var(--border); padding-top: 14px; }
 .emoji { font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif; font-size: 18px; line-height: 1; }
 
+/* Вставка и поиск фото */
+.paste-zone { min-height: 72px; padding: 14px 16px; border: 2px dashed var(--border); border-radius: 12px; background: var(--surface-2); color: var(--muted); font-size: 13px; line-height: 1.45; outline: none; cursor: text; -webkit-user-select: text; user-select: text; caret-color: transparent; }
+.paste-zone:empty::before { content: attr(data-placeholder); }
+.paste-zone:focus, .paste-zone.drag, .media-preview.drag { border-color: var(--accent); background: var(--primary-soft); }
+.media-preview.drag { outline: 2px dashed var(--accent); outline-offset: -4px; }
+.search-row select { width: auto; max-width: 100%; }
+.stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-top: 12px; }
+.stock-grid:empty { display: none; }
+.stock-item { font: inherit; display: flex; flex-direction: column; gap: 3px; text-align: left; padding: 6px; border: 2px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); cursor: pointer; }
+.stock-item:hover, .stock-item:focus-visible { border-color: var(--accent); }
+.stock-item img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 6px; background: var(--surface-2); }
+.stock-item .cap { font-size: 12px; line-height: 1.3; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.stock-item small { font-size: 11px; }
+
 /* Импорт */
 .preview { max-height: 300px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; }
 .preview:empty { display: none; }

@@ -201,10 +201,10 @@ export function watchQueue(started = false) {
       clearInterval(queueTimer); queueTimer = null;
       return;
     }
-    const pct = s.total ? Math.round(((s.done + s.failed) / s.total) * 100) : 0;
+    const pct = s.total ? Math.round(((s.done + s.failed + (s.missed || 0)) / s.total) * 100) : 0;
     bar.hidden = false;
     clear(bar).append(
-      h('span', null, s.active ? `Дополняю карточки: ${s.done + s.failed} из ${s.total}` : `Готово: ${s.done} из ${s.total}` + (s.failed ? `, ошибок: ${s.failed}` : '')),
+      h('span', null, s.active ? `Дополняю карточки: ${s.done + s.failed + (s.missed || 0)} из ${s.total}` : `Готово: ${s.done} из ${s.total}` + (s.missed ? `, не нашлось фото: ${s.missed}` : '') + (s.failed ? `, ошибок: ${s.failed}` : '')),
       h('div', { class: 'bar' }, h('div', { class: 'bar-fill', style: `width:${pct}%` })),
       s.failed && s.lastError ? h('span', { class: 'small' }, `Ошибка: ${s.lastError}`) : null,
       !s.active ? h('button', { class: 'btn small', onClick: () => { bar.hidden = true; } }, 'Скрыть') : null);

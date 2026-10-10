@@ -21,6 +21,7 @@ export async function openBulkImport(topic, onDone) {
     const summary = h('p', { class: 'muted small' });
     const optIpa = h('input', { type: 'checkbox', checked: topic.module.term_lang === 'en' });
     const optImg = h('input', { type: 'checkbox' });
+    const optStock = h('input', { type: 'checkbox' });
     const saveBtn = h('button', { class: 'btn primary', type: 'button' }, 'Добавить карточки');
     let rows = [];
 
@@ -67,8 +68,8 @@ export async function openBulkImport(topic, onDone) {
       saveBtn.disabled = true;
       try {
         const { ids } = await api.bulk(topic.id, cards);
-        if (ids.length && (optIpa.checked || optImg.checked)) {
-          await api.enrich({ cardIds: ids, ipa: optIpa.checked, images: optImg.checked });
+        if (ids.length && (optIpa.checked || optImg.checked || optStock.checked)) {
+          await api.enrich({ cardIds: ids, ipa: optIpa.checked, images: optImg.checked, stock: optStock.checked });
           watchQueue(true);
         }
         toast(`Добавлено карточек: ${ids.length}`, 'success');
@@ -85,6 +86,7 @@ export async function openBulkImport(topic, onDone) {
       summary, preview,
       h('div', { class: 'stack tight' },
         topic.module.term_lang === 'en' ? h('label', { class: 'check' }, optIpa, ' Подтянуть транскрипцию (нужен интернет)') : null,
+        h('label', { class: 'check' }, optStock, ' Подобрать фото из Википедии и Wikimedia Commons (нужен интернет)'),
         h('label', { class: 'check' }, optImg, ' Сгенерировать ассоциативные картинки ИИ (нужен интернет, может занять время)')),
       h('div', { class: 'row end gap' }, h('button', { class: 'btn', type: 'button', onClick: close }, 'Отмена'), saveBtn));
     rebuild();

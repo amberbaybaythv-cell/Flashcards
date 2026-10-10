@@ -1,4 +1,5 @@
-import { h, clear, confirmDialog, modal, toast, cardsWord, field } from '../ui.js';
+import { h, clear, confirmDialog, modal, toast, cardsWord, field, fold } from '../ui.js';
+import { pickImage, toBlob, readClipboardImage } from '../lib/clip.js';
 import { api } from '../api.js';
 import { state, refreshTree, go, watchQueue, openTopicForm } from '../app.js';
 import { openStudyLauncher } from './launcher.js';
@@ -31,39 +32,109 @@ export async function renderTopic({ main, id }) {
   }
 
   function mediaDialog(card) {
-    modal(`Карточка: ${card.term}`, (close) => {
+    let cleanup = () => {};
+    modal(`Фото: ${card.term}`, (close) => {
       const cur = { ...card };
       const imgBox = h('div', { class: 'media-preview' });
+      const creditLine = h('p', { class: 'small muted' });
+      const status = h('p', { class: 'muted small', 'aria-live': 'polite' });
       const ipaIn = h('input', { type: 'text', value: cur.ipa || '', placeholder: '/ˈæp.əl/' });
-      const status = h('p', { class: 'muted small' });
+      const genBtn = h('button', { class: 'btn primary' });
       const promptIn = h('textarea', { rows: 3, class: 'mono', 'aria-label': 'Запрос для ИИ' });
       api.imagePrompt(card.id).then((r) => { promptIn.value = r.prompt; }).catch(() => {});
-      const genBtn = h('button', { class: 'btn primary', onClick: () => run('Генерирую картинку, это может занять до минуты…', () => api.genImage(card.id, promptIn.value)) });
+
       const drawImg = () => {
         clear(imgBox).append(cur.image ? h('img', { src: cur.image, alt: `Картинка к «${cur.term}»` }) : h('p', { class: 'muted' }, 'Картинки пока нет'));
+        const cr = cur.image_credit;
+        clear(creditLine).append(...(cur.image && cr ? ['Фото: ', cr.text ? `${cr.text} · ` : '', cr.url ? h('a', { href: cr.url, target: '_blank', rel: 'noopener' }, cr.source || 'источник') : cr.source || ''] : []));
         genBtn.textContent = cur.image ? 'Пересоздать (ИИ)' : 'Сгенерировать (ИИ)';
       };
       const run = async (label, fn) => {
         status.textContent = label;
-        try { Object.assign(cur, await fn()); drawImg(); ipaIn.value = cur.ipa || ''; status.textContent = ''; }
-        catch (e) { status.textContent = ''; toast(e.message, 'error'); }
+        try { Object.assign(cur, await fn()); drawImg(); ipaIn.value = cur.ipa || ''; status.textContent = ''; return true; }
+        catch (e) { status.textContent = ''; toast(e.message, 'error'); return false; }
       };
-      const file = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true, onChange: () => { if (file.files[0]) run('Загружаю…', () => api.uploadImage(card.id, file.files[0])); } });
+      genBtn.addEventListener('click', () => run('Генерирую картинку, это может занять до минуты…', () => api.genImage(card.id, promptIn.value)));
+
+      /* --- вставка из буфера, перетаскивание, файл --- */
+      const addFound = (found) => run('Добавляю картинку…', async () => api.uploadImage(card.id, await toBlob(found)));
+      const onPaste = (e) => {
+        const found = pickImage(e.clipboardData);
+        if (!found) return;
+        const inField = e.target.matches?.('input, textarea');
+        if (inField && !found.file && (e.clipboardData.getData('text/plain') || '').trim()) return; // обычная вставка текста в поле
+        e.preventDefault();
+        addFound(found);
+      };
+      document.addEventListener('paste', onPaste);
+      cleanup = () => document.removeEventListener('paste', onPaste);
+
+      const zone = h('div', {
+        class: 'paste-zone', contenteditable: 'true', inputmode: 'none', tabindex: '0', spellcheck: 'false', role: 'textbox', autocapitalize: 'off',
+        'aria-label': 'Область для вставки картинки',
+        'data-placeholder': '📋 Скопируйте картинку на сайте и вставьте сюда: Ctrl+V (на планшете: коснитесь и удерживайте → «Вставить»). Можно и перетащить картинку.',
+      });
+      zone.addEventListener('beforeinput', (e) => e.preventDefault()); // печатать в зоне нельзя, только вставлять
+      for (const el of [zone, imgBox]) {
+        el.addEventListener('dragover', (e) => { e.preventDefault(); el.classList.add('drag'); });
+        el.addEventListener('dragleave', () => el.classList.remove('drag'));
+        el.addEventListener('drop', (e) => {
+          e.preventDefault(); el.classList.remove('drag');
+          const found = pickImage(e.dataTransfer);
+          if (found) addFound(found); else toast('В перетащенном нет картинки', 'error');
+        });
+      }
+      const file = h('input', { type: 'file', accept: 'image/png,image/jpeg,image/webp,image/gif', hidden: true, onChange: () => { if (file.files[0]) addFound({ file: file.files[0] }); } });
+
+      /* --- поиск фото в Википедии / Wikimedia Commons --- */
+      const qIn = h('input', { type: 'text', placeholder: 'Что искать: слово или фраза', 'aria-label': 'Запрос для поиска фото' });
+      const langSel = h('select', { 'aria-label': 'Язык Википедии' }, h('option', { value: 'ru' }, 'Википедия: русская'), h('option', { value: 'en' }, 'Википедия: English'));
+      const grid = h('div', { class: 'stock-grid' });
+      let touched = false;
+      qIn.addEventListener('input', () => { touched = true; });
+      langSel.addEventListener('change', () => { touched = true; });
+      const searchBtn = h('button', { class: 'btn', type: 'button' }, 'Найти');
+      const search = async () => {
+        status.textContent = 'Ищу фото…'; clear(grid);
+        try {
+          const list = await api.stockSearch(card.id, touched ? { query: qIn.value.trim(), lang: langSel.value } : undefined);
+          status.textContent = '';
+          if (!list.length) { grid.append(h('p', { class: 'muted small' }, 'Ничего не найдено. Попробуйте другое слово, например по-английски.')); return; }
+          for (const cand of list) {
+            grid.append(h('button', { class: 'stock-item', type: 'button', title: `${cand.label} · ${cand.source}`, onClick: () => run('Скачиваю фото…', () => api.useStock(card.id, cand)) },
+              h('img', { src: cand.thumb, alt: cand.label, loading: 'lazy' }),
+              h('span', { class: 'cap' }, cand.label), h('small', { class: 'muted' }, cand.source)));
+          }
+        } catch (e) { status.textContent = ''; toast(e.message, 'error'); }
+      };
+      searchBtn.addEventListener('click', search);
+      qIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); touched = true; search(); } });
+      api.stockQueries(card.id).then((plan) => {
+        qIn.value = plan.wiki[0]?.q || ''; langSel.value = plan.wiki[0]?.lang || lang;
+        if (!cur.image) search();
+      }).catch(() => {});
+
       drawImg();
       return h('div', { class: 'stack' },
-        imgBox,
+        imgBox, creditLine,
         h('div', { class: 'row gap wrap' },
-          genBtn,
-          h('button', { class: 'btn', onClick: () => file.click() }, 'Загрузить свою'),
+          h('button', { class: 'btn primary', onClick: () => run('Читаю буфер обмена…', async () => api.uploadImage(card.id, await readClipboardImage())) }, '📋 Вставить из буфера'),
+          h('button', { class: 'btn', onClick: () => file.click() }, 'Загрузить файл'),
           h('button', { class: 'btn danger-ghost', onClick: () => run('Удаляю…', () => api.delImage(card.id)) }, 'Убрать')),
-        file,
-        field('Запрос для ИИ', promptIn, 'Можно поправить и написать по-английски: так картинки получаются точнее'),
+        zone, file,
+        fold('Найти фото в Википедии и Wikimedia Commons',
+          [h('p', { class: 'muted small' }, 'Настоящие фотографии из открытых источников, без генерации. Нажмите на картинку, чтобы выбрать. Для конкретных слов (предметы, животные, места) подходит лучше всего; для абстрактных (например, «анализ») результат может быть случайным.'),
+            h('div', { class: 'row gap wrap search-row' }, h('div', { style: 'flex:1 1 220px;min-width:0' }, qIn), langSel, searchBtn), grid],
+          { key: 'media-stock', open: true, cls: 'panel' }),
+        fold('Картинка от ИИ',
+          [promptIn, h('p', { class: 'muted small' }, 'Запрос можно поправить, лучше по-английски.'), h('div', { class: 'row' }, genBtn)],
+          { key: 'media-ai', open: false, cls: 'panel' }),
         lang === 'en' ? field('Транскрипция (IPA)', h('div', { class: 'row gap' }, ipaIn,
           h('button', { class: 'btn', type: 'button', onClick: () => run('Ищу в словаре…', async () => { const c = await api.fetchIpa(card.id); if (!c.ipa) toast('В словаре такого слова нет — введите вручную', 'info'); return c; }) }, 'Найти'),
           h('button', { class: 'btn', type: 'button', onClick: () => run('Сохраняю…', () => api.editCard(card.id, { term: cur.term, definition: cur.definition, ipa: ipaIn.value })) }, 'Сохранить'))) : null,
         status,
         h('div', { class: 'row end' }, h('button', { class: 'btn', onClick: close }, 'Готово')));
-    }, { onClose: () => reload() });
+    }, { wide: true, onClose: () => { cleanup(); reload(); } });
   }
 
   function rowFor(c) {
@@ -138,6 +209,7 @@ export async function renderTopic({ main, id }) {
       addForm,
       cards.length ? h('div', { class: 'row gap wrap small toolbar' },
         lang === 'en' ? h('button', { class: 'btn small', disabled: !missingIpa, onClick: enrich({ ipa: true }, 'Транскрипции') }, `Подтянуть транскрипции${missingIpa ? ` (${missingIpa})` : ''}`) : null,
+        h('button', { class: 'btn small', disabled: !missingImg, onClick: enrich({ stock: true }, 'Фото') }, `Найти фото (Wikimedia)${missingImg ? ` (${missingImg})` : ''}`),
         h('button', { class: 'btn small', disabled: !missingImg, onClick: enrich({ images: true }, 'Картинки') }, `Сгенерировать картинки${missingImg ? ` (${missingImg})` : ''}`),
         state.config.imageConfigured === false ? h('span', { class: 'badge warn' }, h('a', { href: '#/settings' }, 'Для картинок нужен ключ: откройте «Настройки»')) : null) : null,
       cards.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'cards-table' },

@@ -5,6 +5,7 @@ import { INTERVALS, applyAnswer, localDate, addDays } from './lib/leitner.js';
 import {
   lookupIpa, generateImage, buildPrompt, imageProviderName, imageConfigured, toJpegDataUrl,
 } from './lib/enrich.js';
+import { searchStock, downloadStock, buildQueries } from './lib/stock.js';
 
 const LANGS = ['en', 'ru'];
 const M = new Map(), T = new Map(), C = new Map();
@@ -56,7 +57,7 @@ function scoped(scope, id) {
 
 function newCard(topicId, term, definition, extra = {}) {
   return {
-    id: nextId('cards'), topic_id: topicId, term, definition, ipa: null, ipa_tried: 0, image: null,
+    id: nextId('cards'), topic_id: topicId, term, definition, ipa: null, ipa_tried: 0, image: null, image_credit: null,
     box: 1, learned: 0, next_review: localDate(), correct_count: 0, wrong_count: 0, created_at: nowIso(), ...extra,
   };
 }
@@ -68,7 +69,7 @@ function removeCards(cardList, ops) {
 }
 
 /* ---------- Фоновая очередь IPA / картинок ---------- */
-const q = { jobs: [], running: 0, total: 0, done: 0, failed: 0, lastError: null, streak: 0, skipped: 0 };
+const q = { jobs: [], running: 0, total: 0, done: 0, failed: 0, missed: 0, lastError: null, streak: 0, skipped: 0 };
 const CONCURRENCY = 2;
 
 async function runJob(job) {
@@ -77,10 +78,21 @@ async function runJob(job) {
   if (job.type === 'ipa') {
     if (moduleOfCard(card)?.term_lang !== 'en') return;
     card.ipa = await lookupIpa(card.term); card.ipa_tried = 1;
+  } else if (job.type === 'stock') {
+    const cand = (await searchStock(card, moduleOfCard(card)))[0];
+    if (!cand) return { missed: true }; // ничего не нашлось — это не сбой сервиса
+    await applyStock(card, cand);
   } else {
     card.image = await toJpegDataUrl(await generateImage(buildPrompt(card.term, card.definition)));
+    card.image_credit = null;
   }
   await save([{ store: 'cards', put: card }]);
+}
+
+async function applyStock(card, cand) {
+  const { blob, credit } = await downloadStock(cand);
+  card.image = await toJpegDataUrl(blob);
+  card.image_credit = credit;
 }
 
 function pump() {
@@ -88,7 +100,7 @@ function pump() {
     const job = q.jobs.shift();
     q.running++;
     runJob(job)
-      .then(() => { q.done++; q.streak = 0; })
+      .then((r) => { if (r?.missed) q.missed++; else q.done++; q.streak = 0; })
       .catch((e) => {
         q.failed++; q.streak++; q.lastError = e.message;
         if (q.streak >= 3) { q.skipped += q.jobs.length; q.failed += q.jobs.length; q.jobs = []; }
@@ -115,7 +127,7 @@ function exportModuleData(m) {
     topics: topicsOf(m.id).map((t) => ({
       name: t.name,
       cards: cardsOfTopic(t.id).map((c) => ({
-        term: c.term, definition: c.definition, ipa: c.ipa, image: c.image, box: c.box, learned: c.learned,
+        term: c.term, definition: c.definition, ipa: c.ipa, image: c.image, image_credit: c.image_credit, box: c.box, learned: c.learned,
         next_review: c.next_review, correct_count: c.correct_count, wrong_count: c.wrong_count,
       })),
     })),
@@ -142,7 +154,7 @@ async function importOne(d, ops) {
         try { image = await toJpegDataUrl(await (await fetch(image)).blob()); } catch { /* оставляем как есть */ }
       }
       const card = newCard(topic.id, term, definition, {
-        ipa, ipa_tried: ipa ? 1 : 0, image,
+        ipa, ipa_tried: ipa ? 1 : 0, image, image_credit: image && c.image_credit && typeof c.image_credit === 'object' ? { text: str(c.image_credit.text), url: str(c.image_credit.url), source: str(c.image_credit.source) } : null,
         box: Math.min(5, Math.max(1, num(c.box, 1))), learned: c.learned ? 1 : 0,
         next_review: /^\d{4}-\d{2}-\d{2}$/.test(c.next_review || '') ? c.next_review : localDate(),
         correct_count: num(c.correct_count, 0), wrong_count: num(c.wrong_count, 0),
@@ -288,6 +300,7 @@ export const api = wrapAll({
   async genImage(id, prompt) {
     const c = byId(C, id, 'Карточка');
     c.image = await toJpegDataUrl(await generateImage(str(prompt) || buildPrompt(c.term, c.definition)));
+    c.image_credit = null;
     await save([{ store: 'cards', put: c }]);
     return copy(c);
   },
@@ -295,32 +308,46 @@ export const api = wrapAll({
     const c = byId(C, id, 'Карточка');
     if (!file || !file.type?.startsWith('image/')) fail('Нужен файл-изображение (PNG, JPEG, WebP, GIF)');
     c.image = await toJpegDataUrl(file);
+    c.image_credit = null;
     await save([{ store: 'cards', put: c }]);
     return copy(c);
   },
   async delImage(id) {
     const c = byId(C, id, 'Карточка');
-    c.image = null;
+    c.image = null; c.image_credit = null;
     await save([{ store: 'cards', put: c }]);
     return copy(c);
   },
 
-  enrich({ scope, id, cardIds, ipa, images }) {
+  async stockSearch(id, opts) {
+    const c = byId(C, id, 'Карточка');
+    return searchStock(c, moduleOfCard(c), opts);
+  },
+  async useStock(id, cand) {
+    const c = byId(C, id, 'Карточка');
+    await applyStock(c, cand);
+    await save([{ store: 'cards', put: c }]);
+    return copy(c);
+  },
+  stockQueries: (id) => { const c = byId(C, id, 'Карточка'); return buildQueries(c, moduleOfCard(c)); },
+
+  enrich({ scope, id, cardIds, ipa, images, stock }) {
     const list = Array.isArray(cardIds) && cardIds.length ? cardIds.map((x) => C.get(Number(x))).filter(Boolean) : scoped(scope, id);
     const jobs = [];
     for (const c of list) {
       if (ipa && moduleOfCard(c)?.term_lang === 'en' && !c.ipa && !c.ipa_tried) jobs.push({ type: 'ipa', cardId: c.id });
       if (images && !c.image) jobs.push({ type: 'image', cardId: c.id });
+      if (stock && !c.image) jobs.push({ type: 'stock', cardId: c.id });
     }
     if (jobs.length) {
-      if (!q.jobs.length && !q.running) Object.assign(q, { total: 0, done: 0, failed: 0, lastError: null, streak: 0, skipped: 0 });
+      if (!q.jobs.length && !q.running) Object.assign(q, { total: 0, done: 0, failed: 0, missed: 0, lastError: null, streak: 0, skipped: 0 });
       q.jobs.push(...jobs); q.total += jobs.length; pump();
     }
     return { queued: jobs.length };
   },
   queue() {
     return {
-      active: q.jobs.length + q.running > 0, total: q.total, done: q.done, failed: q.failed,
+      active: q.jobs.length + q.running > 0, total: q.total, done: q.done, failed: q.failed, missed: q.missed,
       lastError: q.lastError && q.skipped ? `${q.lastError} (очередь остановлена после нескольких ошибок подряд, пропущено: ${q.skipped})` : q.lastError,
     };
   },

@@ -1,7 +1,7 @@
 // Офлайн-режим: все файлы приложения кешируются при первой загрузке.
 // Список файлов и версия обновляются командой `npm run build:sw`.
 /* BUILD:START */
-const VERSION = '9d82a1ef9b';
+const VERSION = 'a1f780b9e9';
 const FILES = [
   "./",
   "./css/fonts.css",
@@ -21,12 +21,14 @@ const FILES = [
   "./index.html",
   "./js/api.js",
   "./js/app.js",
+  "./js/lib/clip.js",
   "./js/lib/enrich.js",
   "./js/lib/fuzzy.js",
   "./js/lib/idb.js",
   "./js/lib/leitner.js",
   "./js/lib/parse.js",
   "./js/lib/speech.js",
+  "./js/lib/stock.js",
   "./js/lib/study-ui.js",
   "./js/modes/cards.js",
   "./js/modes/match.js",
