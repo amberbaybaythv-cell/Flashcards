@@ -7,6 +7,8 @@ const fmt = (ms) => { const s = Math.round(ms / 1000); return `${Math.floor(s / 
 export function runMatch(ctx) {
   const stage = clear(ctx.stage);
   const mistakes = new Set();
+  const recorded = new Set();
+  const rec = (c, ok) => { if (!recorded.has(c.id)) { recorded.add(c.id); ctx.record(c, ok); } };
   const total = ctx.cards.length;
   let matched = 0, sel = null, timerId = null;
   const t0 = Date.now();
@@ -51,11 +53,13 @@ export function runMatch(ctx) {
     const a = sel; sel = null;
     if (a.card.id === b.card.id) {
       [a, b].forEach((x) => { x.classList.remove('sel'); x.classList.add('done'); x.disabled = true; });
+      rec(a.card, !mistakes.has(a.card.id));
       matched++; left--;
       ctx.setProgress(matched, total, `${matched} из ${total}`);
       if (!left) setTimeout(() => (++r < rounds.length ? startRound() : end()), 350);
     } else {
       mistakes.add(a.card.id); mistakes.add(b.card.id);
+      rec(a.card, false); rec(b.card, false);
       [a, b].forEach((x) => { x.classList.remove('sel'); x.classList.add('shake'); setTimeout(() => x.classList.remove('shake'), 400); });
     }
   }

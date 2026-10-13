@@ -206,3 +206,4 @@ body.studying .sidebar, body.studying .menu-btn { display: none; } body.studying
   body.studying .main { padding-top: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+.saved { color: var(--good); white-space: nowrap; }

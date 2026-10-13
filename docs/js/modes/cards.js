@@ -46,7 +46,7 @@ export function runCards(ctx) {
 
   function answer(ok) {
     if (!current) return;
-    if (!first.has(current.id)) first.set(current.id, ok);
+    if (!first.has(current.id)) { first.set(current.id, ok); ctx.record(current, ok); }
     if (ok) { known.add(current.id); queue.shift(); }
     else queue.push(queue.shift());
     show();

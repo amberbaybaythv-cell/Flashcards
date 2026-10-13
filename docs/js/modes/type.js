@@ -5,7 +5,8 @@ import { checkAnswer } from '../lib/fuzzy.js';
 /** Ввод ответа: допускается 1 опечатка, несколько вариантов через «/», «,», «;». */
 export function runType(ctx) {
   const results = [];
-  let i = 0, checked = false;
+  let i = 0, checked = false, pending = null;
+  const commit = () => { if (pending) { ctx.record(pending.card, pending.correct); pending = null; } };
   const total = ctx.cards.length;
   const stage = clear(ctx.stage);
 
@@ -37,6 +38,7 @@ export function runType(ctx) {
     input.disabled = true;
     const entry = { card, correct: verdict !== 'wrong' };
     results.push(entry);
+    pending = entry; // сохраняется при переходе дальше или выходе (вердикт можно поправить)
     const msg = h('div', { class: 'feedback ' + (entry.correct ? 'ok' : 'bad') });
     const paint = () => {
       msg.className = 'feedback ' + (entry.correct ? 'ok' : 'bad');
@@ -57,12 +59,12 @@ export function runType(ctx) {
     ctx.setProgress(i + 1, total, `${i + 1} из ${total}`);
   }
 
-  function next() { if (!checked) return; i++; show(); }
+  function next() { if (!checked) return; commit(); i++; show(); }
 
   const off = onKeys((e) => {
     if (e.key === 'Enter') { e.preventDefault(); check(); }
   });
 
   show();
-  return { destroy: off };
+  return { destroy: () => { off(); commit(); } };
 }

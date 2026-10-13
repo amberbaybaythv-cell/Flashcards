@@ -1,4 +1,4 @@
-import { h, clear, shuffle, store } from '../ui.js';
+import { h, clear, shuffle, store, toast } from '../ui.js';
 import { api } from '../api.js';
 import { go, refreshTree } from '../app.js';
 import { runCards } from '../modes/cards.js';
@@ -17,14 +17,15 @@ export async function renderStudy({ main, query }) {
 
   const progressFill = h('div', { class: 'bar-fill' });
   const progressText = h('span', { class: 'small muted' });
+  const savedText = h('span', { class: 'small saved', title: 'Каждый ответ сохраняется сразу, выйти можно в любой момент' });
   const auto = h('input', { type: 'checkbox', checked: store.get('autoSpeak', false), onChange: () => store.set('autoSpeak', auto.checked) });
   const stage = h('div', { class: 'stage' });
   const shell = h('div', { class: 'study' },
     h('header', { class: 'study-head' },
-      h('a', { class: 'btn', href: back }, '← Выйти'),
+      h('a', { class: 'btn', href: back, onClick: (e) => { e.preventDefault(); exit(); } }, '← Выйти'),
       h('div', { class: 'grow' }, h('b', null, modeName), h('span', { class: 'muted' }, ` · ${title}`)),
       speechSupported ? h('label', { class: 'check small' }, auto, ' Озвучивать') : null),
-    h('div', { class: 'row gap center-row' }, h('div', { class: 'bar grow' }, progressFill), progressText),
+    h('div', { class: 'row gap center-row' }, h('div', { class: 'bar grow' }, progressFill), progressText, savedText),
     stage);
   // после клика по кнопке фокус снимаем, чтобы пробел/Enter не нажимали её повторно
   shell.addEventListener('click', (e) => { if (e.target.closest('button')) document.activeElement?.blur(); });
@@ -36,6 +37,23 @@ export async function renderStudy({ main, query }) {
   }
 
   let current = null;
+
+  /* Каждый ответ сохраняется сразу, а не в конце сессии: можно выйти в любой момент и ничего не потеряется. */
+  const saved = new Set();
+  let savedCount = 0, saveError = null, pending = Promise.resolve();
+  const record = (practice) => (card, correct) => {
+    if (practice || saved.has(card.id)) return; // учитывается только первый ответ по карточке; тренировка ошибок коробки не меняет
+    saved.add(card.id); savedCount++;
+    savedText.textContent = `✓ Сохранено: ${savedCount}`;
+    pending = pending.then(() => api.answers([{ id: card.id, correct: !!correct }])).catch((e) => { saveError = e.message; toast(`Не удалось сохранить: ${e.message}`, 'error'); });
+  };
+  async function exit() {
+    current?.destroy(); current = null; // незавершённый вердикт в режиме ввода сохраняется при закрытии режима
+    await pending;
+    await refreshTree();
+    if (savedCount && !saveError) toast(`Прогресс сохранён: ${savedCount} шт.`, 'success');
+    go(back);
+  }
   const setProgress = (done, total, text) => {
     progressFill.style.width = `${total ? (done / total) * 100 : 0}%`;
     progressText.textContent = text || '';
@@ -48,6 +66,7 @@ export async function renderStudy({ main, query }) {
       cards: shuffle(cards), pool: data.pool, stage, setProgress, practice,
       dirOf: (c) => dirs.get(c.id), autoSpeak: () => auto.checked,
       bestKey: `${scope}:${id}:${filter}`,
+      record: record(practice),
       finish: (results, note) => finish(results, note, practice),
     };
     current = run(ctx);
@@ -56,11 +75,8 @@ export async function renderStudy({ main, query }) {
   async function finish(results, note, practice) {
     current?.destroy(); current = null;
     setProgress(1, 1, 'Готово');
-    let saveError = null;
-    if (!practice) {
-      try { await api.answers(results.map((r) => ({ id: r.card.id, correct: !!r.correct }))); await refreshTree(); }
-      catch (e) { saveError = e.message; }
-    }
+    await pending; // все ответы уже записаны по ходу сессии, ждём только последний
+    await refreshTree();
     const ok = results.filter((r) => r.correct).length;
     const wrong = results.filter((r) => !r.correct);
     const pct = Math.round((ok / results.length) * 100);
@@ -80,5 +96,5 @@ export async function renderStudy({ main, query }) {
   }
 
   start(data.cards, false);
-  return () => current?.destroy();
+  return () => { current?.destroy(); pending.then(() => refreshTree()); };
 }

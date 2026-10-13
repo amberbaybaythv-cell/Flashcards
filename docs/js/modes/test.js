@@ -54,6 +54,7 @@ export function runTest(ctx) {
       else if (j === k) b.classList.add('wrong');
     });
     results.push({ card, correct: ok });
+    ctx.record(card, ok);
     feedback.textContent = ok ? 'Верно!' : 'Неверно. Правильный ответ подсвечен.';
     feedback.className = 'feedback ' + (ok ? 'ok' : 'bad');
     if (!s.qIsTerm) { feedback.after(h('div', { class: 'reveal' }, termBlock(card))); autoSpeak(ctx, card); }
