@@ -1,0 +1,13 @@
+{
+  "name": "quizlet-local",
+  "version": "2.0.0",
+  "description": "Локальный аналог Quizlet: модули, темы, флеш-карточки, система Лейтнера. Работает в браузере, данные хранятся на устройстве.",
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "build:sw": "node scripts/build-sw.mjs",
+    "test": "node --test test/*.test.js"
+  },
+  "engines": { "node": ">=18" },
+  "license": "ISC"
+}

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Карточки</title>
+  <meta name="theme-color" content="#4f46e5">
+  <script>try{var d=document.documentElement,a=JSON.parse(localStorage.getItem('accent')),t=JSON.parse(localStorage.getItem('theme'));if(a)d.dataset.accent=a;if(t)d.dataset.theme=t}catch(e){}</script>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Карточки">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="./icons/icon-192.png">
+  <link rel="preload" href="./fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="./css/fonts.css">
+  <link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+  <div class="app">
+    <button id="menu-btn" class="icon-btn menu-btn" aria-label="Меню">☰</button>
+    <aside id="sidebar" class="sidebar"></aside>
+    <main id="main" class="main" tabindex="-1"></main>
+  </div>
+  <div id="queue-bar" class="queue-bar" hidden></div>
+  <div id="modals"></div>
+  <div id="toasts" aria-live="polite"></div>
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
