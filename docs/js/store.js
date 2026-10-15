@@ -8,17 +8,18 @@ import {
 import { searchStock, downloadStock, buildQueries } from './lib/stock.js';
 
 const LANGS = ['en', 'ru'];
-const M = new Map(), T = new Map(), C = new Map();
+const M = new Map(), T = new Map(), C = new Map(), B = new Map();
 let R = [];
-const ids = { modules: 0, topics: 0, cards: 0, reviews: 0 };
+const ids = { modules: 0, topics: 0, cards: 0, reviews: 0, blocks: 0 };
 let db = null;
 export const storage = { persistent: false, error: null };
 
 const ready = (async () => {
   try {
     db = await openDb();
-    const [m, t, c, r] = await Promise.all(STORES.map((s) => getAll(db, s)));
-    m.forEach((x) => M.set(x.id, x)); t.forEach((x) => T.set(x.id, x)); c.forEach((x) => C.set(x.id, x)); R = r;
+    const [m, t, c, r, bl] = await Promise.all(STORES.map((s) => getAll(db, s)));
+    m.forEach((x) => M.set(x.id, x)); t.forEach((x) => T.set(x.id, x)); c.forEach((x) => C.set(x.id, x)); bl.forEach((x) => B.set(x.id, x)); R = r;
+    ids.blocks = Math.max(0, ...bl.map((x) => x.id));
     ids.modules = Math.max(0, ...m.map((x) => x.id)); ids.topics = Math.max(0, ...t.map((x) => x.id));
     ids.cards = Math.max(0, ...c.map((x) => x.id)); ids.reviews = Math.max(0, ...r.map((x) => x.id));
     storage.persistent = true;
@@ -45,11 +46,40 @@ function moduleFields(b) {
 const topicsOf = (mid) => [...T.values()].filter((t) => t.module_id === mid).sort((a, b) => a.position - b.position || a.id - b.id);
 const cardsOfTopic = (tid) => [...C.values()].filter((c) => c.topic_id === tid).sort((a, b) => a.id - b.id);
 const moduleOfCard = (c) => M.get(T.get(c.topic_id)?.module_id);
+const blocksOf = (tid) => [...B.values()].filter((b) => b.topic_id === tid).sort((a, b) => a.position - b.position || a.id - b.id);
+const blockOf = (c) => (c.block_id ? B.get(c.block_id) : null);
+const sameName = (a, b) => a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** Карточки по области: topic | module | all. */
-function scoped(scope, id) {
+/** Блок темы по названию (без учёта регистра); создаёт, если такого ещё нет. Операции записи добавляются в ops. */
+function ensureBlock(tid, name, ops) {
+  name = str(name);
+  const found = blocksOf(tid).find((b) => sameName(b.name, name));
+  if (found) return found;
+  const b = { id: nextId('blocks'), topic_id: tid, name, position: Math.max(0, ...blocksOf(tid).map((x) => x.position)) + 1, created_at: nowIso() };
+  B.set(b.id, b); ops.push({ store: 'blocks', put: b });
+  return b;
+}
+
+/** Показатели набора карточек: количество по статусам и по коробкам Лейтнера. */
+function summarize(list, today = localDate()) {
+  const total = list.length, learned = list.filter((c) => c.learned).length;
+  const fresh = list.filter((c) => !c.learned && c.correct_count + c.wrong_count === 0).length;
+  return {
+    total, learned, fresh, learning: total - learned - fresh,
+    due: list.filter((c) => c.next_review <= today).length,
+    boxes: [1, 2, 3, 4, 5].map((b) => list.filter((c) => c.box === b).length),
+  };
+}
+
+/** Карточки по области: topic | module | all. Для темы можно указать блок: число, 'none' (без блока) или 'all'. */
+function scoped(scope, id, block) {
   id = Number(id);
-  if (scope === 'topic') return cardsOfTopic(id);
+  if (scope === 'topic') {
+    const list = cardsOfTopic(id);
+    if (block === 'none') return list.filter((c) => !c.block_id || !B.has(c.block_id));
+    if (block != null && block !== '' && block !== 'all') return list.filter((c) => c.block_id === Number(block));
+    return list;
+  }
   const all = [...C.values()].sort((a, b) => a.id - b.id);
   if (scope === 'module') return all.filter((c) => T.get(c.topic_id)?.module_id === id);
   return all;
@@ -57,7 +87,7 @@ function scoped(scope, id) {
 
 function newCard(topicId, term, definition, extra = {}) {
   return {
-    id: nextId('cards'), topic_id: topicId, term, definition, ipa: null, ipa_tried: 0, image: null, image_credit: null,
+    id: nextId('cards'), topic_id: topicId, block_id: null, term, definition, ipa: null, ipa_tried: 0, image: null, image_credit: null,
     box: 1, learned: 0, next_review: localDate(), correct_count: 0, wrong_count: 0, created_at: nowIso(), ...extra,
   };
 }
@@ -120,13 +150,26 @@ const safeName = (s) => s.replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80) || 'export
 const oneLine = (s) => s.replace(/\s*\n\s*/g, ' ');
 const cardLine = (c) => `${oneLine(c.term)} - ${oneLine(c.definition)}`;
 
+/** Текст темы: сначала карточки без блока, затем «### Название блока» и его карточки. */
+function topicTextBody(t) {
+  const cs = cardsOfTopic(t.id);
+  const lines = cs.filter((c) => !blockOf(c)).map(cardLine);
+  for (const b of blocksOf(t.id)) {
+    const bc = cs.filter((c) => c.block_id === b.id);
+    if (bc.length) lines.push(`### ${b.name}`, ...bc.map(cardLine));
+  }
+  return lines.join('\n') + '\n';
+}
+
 function exportModuleData(m) {
   return {
     format: 'quizlet-local', version: 2,
     module: { name: m.name, description: m.description, term_lang: m.term_lang, def_lang: m.def_lang },
     topics: topicsOf(m.id).map((t) => ({
       name: t.name,
+      blocks: blocksOf(t.id).map((b) => ({ name: b.name })),
       cards: cardsOfTopic(t.id).map((c) => ({
+        block: blockOf(c)?.name || null,
         term: c.term, definition: c.definition, ipa: c.ipa, image: c.image, image_credit: c.image_credit, box: c.box, learned: c.learned,
         next_review: c.next_review, correct_count: c.correct_count, wrong_count: c.wrong_count,
       })),
@@ -144,6 +187,7 @@ async function importOne(d, ops) {
     if (!name) continue;
     const topic = { id: nextId('topics'), module_id: mod.id, name, position: ++pos, created_at: nowIso() };
     T.set(topic.id, topic); ops.push({ store: 'topics', put: topic });
+    for (const b of Array.isArray(t.blocks) ? t.blocks : []) if (str(b?.name)) ensureBlock(topic.id, b.name, ops);
     for (const c of Array.isArray(t.cards) ? t.cards : []) {
       const term = str(c.term), definition = str(c.definition);
       if (!term || !definition) continue;
@@ -159,6 +203,7 @@ async function importOne(d, ops) {
         next_review: /^\d{4}-\d{2}-\d{2}$/.test(c.next_review || '') ? c.next_review : localDate(),
         correct_count: num(c.correct_count, 0), wrong_count: num(c.wrong_count, 0),
       });
+      if (str(c.block)) card.block_id = ensureBlock(topic.id, c.block, ops).id;
       C.set(card.id, card); ops.push({ store: 'cards', put: card }); count++;
     }
   }
@@ -214,7 +259,11 @@ export const api = wrapAll({
   },
   async delModule(id) {
     const m = byId(M, id, 'Модуль'), ops = [];
-    for (const t of topicsOf(m.id)) { removeCards(cardsOfTopic(t.id), ops); T.delete(t.id); ops.push({ store: 'topics', del: t.id }); }
+    for (const t of topicsOf(m.id)) {
+      removeCards(cardsOfTopic(t.id), ops);
+      for (const b of blocksOf(t.id)) { B.delete(b.id); ops.push({ store: 'blocks', del: b.id }); }
+      T.delete(t.id); ops.push({ store: 'topics', del: t.id });
+    }
     M.delete(m.id); ops.push({ store: 'modules', del: m.id });
     await save(ops);
     return { ok: true };
@@ -243,6 +292,7 @@ export const api = wrapAll({
   async delTopic(id) {
     const t = byId(T, id, 'Тема'), ops = [];
     removeCards(cardsOfTopic(t.id), ops);
+    for (const b of blocksOf(t.id)) { B.delete(b.id); ops.push({ store: 'blocks', del: b.id }); }
     T.delete(t.id); ops.push({ store: 'topics', del: t.id });
     await save(ops);
     return { ok: true };
@@ -254,16 +304,20 @@ export const api = wrapAll({
     if (!term || !definition) fail('Заполните термин и определение');
     byId(T, tid, 'Тема');
     const c = newCard(Number(tid), term, definition);
+    if (b.block_id && B.get(Number(b.block_id))?.topic_id === Number(tid)) c.block_id = Number(b.block_id);
     C.set(c.id, c); await save([{ store: 'cards', put: c }]);
     return copy(c);
   },
-  async bulk(tid, list) {
+  /** Массовое добавление. opts.blockId — блок по умолчанию; у карточки может быть своё поле block (название блока). */
+  async bulk(tid, list, opts = {}) {
     byId(T, tid, 'Тема');
     const ops = [], out = [];
+    const defBlock = opts.blockId && B.get(Number(opts.blockId))?.topic_id === Number(tid) ? Number(opts.blockId) : null;
     for (const x of Array.isArray(list) ? list : []) {
       const term = str(x.term), definition = str(x.definition);
       if (!term || !definition) continue;
       const c = newCard(Number(tid), term, definition);
+      c.block_id = str(x.block) ? ensureBlock(Number(tid), x.block, ops).id : defBlock;
       C.set(c.id, c); ops.push({ store: 'cards', put: c }); out.push(c.id);
     }
     await save(ops);
@@ -352,9 +406,9 @@ export const api = wrapAll({
     };
   },
 
-  study({ scope = 'topic', id = 0, filter = 'all' }) {
+  study({ scope = 'topic', id = 0, filter = 'all', block }) {
     const today = localDate();
-    let list = scoped(scope, id);
+    let list = scoped(scope, id, block);
     if (filter === 'due') list = list.filter((c) => c.next_review <= today);
     if (filter === 'unlearned') list = list.filter((c) => !c.learned);
     const cards = list.map((c) => {
@@ -381,15 +435,9 @@ export const api = wrapAll({
     return { ok: true };
   },
 
-  stats(scope, id) {
-    const today = localDate(), list = scoped(scope, id), set = new Set(list.map((c) => c.id));
-    const totals = {
-      total: list.length, learned: list.filter((c) => c.learned).length,
-      fresh: list.filter((c) => !c.learned && c.correct_count + c.wrong_count === 0).length,
-      due: list.filter((c) => c.next_review <= today).length,
-    };
-    totals.learning = totals.total - totals.learned - totals.fresh;
-    const boxes = [1, 2, 3, 4, 5].map((b) => list.filter((c) => c.box === b).length);
+  stats(scope, id, block) {
+    const today = localDate(), list = scoped(scope, id, block), set = new Set(list.map((c) => c.id));
+    const { boxes, ...totals } = summarize(list, today);
     const start = addDays(today, -29), act = new Map();
     for (const r of R) {
       if (r.day < start || !set.has(r.card_id)) continue;
@@ -400,7 +448,80 @@ export const api = wrapAll({
     const hardest = list.filter((c) => c.wrong_count > 0)
       .sort((a, b) => b.wrong_count - a.wrong_count || a.correct_count - b.correct_count).slice(0, 8)
       .map((c) => ({ id: c.id, term: c.term, definition: c.definition, wrong_count: c.wrong_count, correct_count: c.correct_count }));
-    return { totals, boxes, activity, hardest };
+    const res = { totals, boxes, activity, hardest };
+    // по каждому блоку темы (и по карточкам без блока), если в теме есть блоки
+    if (scope === 'topic' && (block == null || block === 'all' || block === '') && blocksOf(Number(id)).length) {
+      const topicCards = cardsOfTopic(Number(id));
+      const rows = blocksOf(Number(id)).map((b) => ({ id: b.id, name: b.name, ...summarize(topicCards.filter((c) => c.block_id === b.id), today) }));
+      const none = topicCards.filter((c) => !c.block_id || !B.has(c.block_id));
+      if (none.length) rows.push({ id: null, name: 'Без блока', ...summarize(none, today) });
+      res.blocks = rows;
+    }
+    return res;
+  },
+
+  /* ----- блоки внутри темы ----- */
+  blocks(tid) {
+    const t = byId(T, tid, 'Тема'), today = localDate(), cs = cardsOfTopic(t.id);
+    const blocks = blocksOf(t.id).map((b) => ({ id: b.id, name: b.name, position: b.position, ...summarize(cs.filter((c) => c.block_id === b.id), today) }));
+    const none = summarize(cs.filter((c) => !c.block_id || !B.has(c.block_id)), today);
+    return { blocks, none, total: cs.length };
+  },
+  async addBlock(tid, name) {
+    const t = byId(T, tid, 'Тема');
+    name = str(name);
+    if (!name) fail('Укажите название блока');
+    if (blocksOf(t.id).some((b) => sameName(b.name, name))) fail('Блок с таким названием уже есть в этой теме');
+    const ops = [], b = ensureBlock(t.id, name, ops);
+    await save(ops);
+    return copy(b);
+  },
+  async editBlock(id, name) {
+    const b = byId(B, id, 'Блок');
+    name = str(name);
+    if (!name) fail('Укажите название блока');
+    if (blocksOf(b.topic_id).some((x) => x.id !== b.id && sameName(x.name, name))) fail('Блок с таким названием уже есть в этой теме');
+    b.name = name;
+    await save([{ store: 'blocks', put: b }]);
+    return copy(b);
+  },
+  /** Удаляет блок; карточки остаются в теме без блока. */
+  async delBlock(id) {
+    const b = byId(B, id, 'Блок'), ops = [];
+    for (const c of cardsOfTopic(b.topic_id)) if (c.block_id === b.id) { c.block_id = null; ops.push({ store: 'cards', put: c }); }
+    B.delete(b.id); ops.push({ store: 'blocks', del: b.id });
+    await save(ops);
+    return { ok: true };
+  },
+  /** Переносит карточки в блок (blockId = null убирает из блока). */
+  async moveCards(cardIds, blockId) {
+    const block = blockId ? byId(B, blockId, 'Блок') : null, ops = [];
+    for (const cid of Array.isArray(cardIds) ? cardIds : []) {
+      const c = C.get(Number(cid));
+      if (!c || (block && block.topic_id !== c.topic_id)) continue; // нельзя переносить в блок другой темы
+      c.block_id = block ? block.id : null;
+      ops.push({ store: 'cards', put: c });
+    }
+    await save(ops);
+    return { moved: ops.length };
+  },
+  /** Делит карточки без блока на блоки по size штук: «Блок 1», «Блок 2», … */
+  async splitBlocks(tid, size) {
+    const t = byId(T, tid, 'Тема');
+    size = Math.floor(Number(size));
+    if (!(size >= 2 && size <= 500)) fail('Размер блока: от 2 до 500 карточек');
+    const free = cardsOfTopic(t.id).filter((c) => !c.block_id || !B.has(c.block_id));
+    if (!free.length) fail('Все карточки темы уже распределены по блокам');
+    const ops = [];
+    let n = 0;
+    for (let i = 0; i < free.length; i += size) {
+      let name;
+      do { name = `Блок ${++n}`; } while (blocksOf(t.id).some((b) => sameName(b.name, name)));
+      const b = ensureBlock(t.id, name, ops);
+      for (const c of free.slice(i, i + size)) { c.block_id = b.id; ops.push({ store: 'cards', put: c }); }
+    }
+    await save(ops);
+    return { blocks: Math.ceil(free.length / size), cards: free.length };
   },
 
   search(query) {
@@ -434,14 +555,14 @@ export const api = wrapAll({
   downloadModule(id, fmt) {
     const m = byId(M, id, 'Модуль');
     if (fmt === 'txt') {
-      const text = topicsOf(m.id).map((t) => `## ${t.name}\n${cardsOfTopic(t.id).map(cardLine).join('\n')}\n`).join('\n');
+      const text = topicsOf(m.id).map((t) => `## ${t.name}\n${topicTextBody(t)}`).join('\n');
       saveFile(`${safeName(m.name)}.txt`, 'text/plain;charset=utf-8', text);
     } else saveFile(`${safeName(m.name)}.json`, 'application/json', JSON.stringify(exportModuleData(m)));
     return { ok: true };
   },
   downloadTopic(id) {
     const t = byId(T, id, 'Тема');
-    saveFile(`${safeName(t.name)}.txt`, 'text/plain;charset=utf-8', cardsOfTopic(t.id).map(cardLine).join('\n') + '\n');
+    saveFile(`${safeName(t.name)}.txt`, 'text/plain;charset=utf-8', topicTextBody(t));
     return { ok: true };
   },
   downloadBackup() {

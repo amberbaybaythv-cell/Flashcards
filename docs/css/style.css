@@ -207,3 +207,23 @@ body.studying .sidebar, body.studying .menu-btn { display: none; } body.studying
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
 .saved { color: var(--good); white-space: nowrap; }
+.prow.head { grid-template-columns: 1fr; background: var(--primary-soft); }
+
+/* Блоки внутри темы */
+.blocks-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 4px 0 12px; }
+.chip { font: inherit; font-size: 14px; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer; white-space: nowrap; }
+.chip:hover { border-color: var(--accent); }
+.chip[aria-pressed="true"] { background: var(--primary); color: var(--primary-ink); border-color: transparent; font-weight: 600; }
+.chip .n { opacity: .7; margin-left: 4px; font-size: 12px; }
+.chip.add { border-style: dashed; color: var(--primary-text); }
+.block-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 12px; background: var(--primary-soft); border-radius: 10px; }
+.bulk-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--accent); border-radius: 10px; position: sticky; top: 8px; z-index: 5; box-shadow: var(--shadow); }
+.bulk-bar select { width: auto; max-width: 100%; padding: 5px 10px; }
+.cards-table tr.sel td { background: var(--primary-soft); }
+.c-chk { width: 36px; padding-right: 0 !important; } .c-chk input { vertical-align: middle; }
+.blk-tag { display: inline-block; margin-top: 2px; padding: 0 8px; font-size: 11px; border-radius: 999px; background: var(--primary-soft); color: var(--primary-text); }
+.linklike { font: inherit; font-weight: 600; background: none; border: 0; padding: 0; color: var(--text); cursor: pointer; text-align: left; } .linklike:hover { color: var(--primary-text); text-decoration: underline; }
+.blk-table { display: flex; flex-direction: column; gap: 14px; }
+.blk-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 6px; }
+.stack-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
+.stack-bar .seg { min-width: 4px; } .seg.b1 { background: var(--bad); } .seg.b2 { background: var(--warn); } .seg.b3 { background: #d6a84a; } .seg.b4 { background: var(--accent); } .seg.b5 { background: var(--good); }

@@ -10,9 +10,9 @@ import { speechSupported } from '../lib/speech.js';
 const MODES = { cards: [runCards, 'Флеш-карточки'], test: [runTest, 'Тест'], type: [runType, 'Ввод ответа'], match: [runMatch, 'Сопоставление'] };
 
 export async function renderStudy({ main, query }) {
-  const { mode = 'cards', dir = 'td', filter = 'all', scope = 'topic', id = 0, title = '' } = query;
+  const { mode = 'cards', dir = 'td', filter = 'all', scope = 'topic', id = 0, title = '', block = 'all' } = query;
   const [run, modeName] = MODES[mode] || MODES.cards;
-  const data = await api.study({ scope, id, filter });
+  const data = await api.study({ scope, id, filter, block });
   const back = scope === 'topic' ? `#/t/${id}` : scope === 'module' ? `#/m/${id}` : '#/';
 
   const progressFill = h('div', { class: 'bar-fill' });
@@ -65,7 +65,7 @@ export async function renderStudy({ main, query }) {
     const ctx = {
       cards: shuffle(cards), pool: data.pool, stage, setProgress, practice,
       dirOf: (c) => dirs.get(c.id), autoSpeak: () => auto.checked,
-      bestKey: `${scope}:${id}:${filter}`,
+      bestKey: `${scope}:${id}:${block}:${filter}`,
       record: record(practice),
       finish: (results, note) => finish(results, note, practice),
     };

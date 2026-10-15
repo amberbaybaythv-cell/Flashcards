@@ -6,7 +6,8 @@ import { refreshTree, go, watchQueue } from '../app.js';
 const norm = (s) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
 /** Окно массового импорта в тему: сплошной текст → предпросмотр → сохранение. */
-export async function openBulkImport(topic, onDone) {
+export async function openBulkImport(topic, onDone, { blockId = null } = {}) {
+  const { blocks } = await api.blocks(topic.id);
   const existing = new Set((await api.moduleCards(topic.module_id)).map((c) => norm(c.term)));
   const saved = store.get('importOpts', { termSep: 'dash', customSep: '', cardSep: 'newline' });
 
@@ -17,6 +18,11 @@ export async function openBulkImport(topic, onDone) {
     const cardSep = h('select', null,
       h('option', { value: 'newline', selected: saved.cardSep === 'newline' }, 'Новая строка'),
       h('option', { value: 'blank', selected: saved.cardSep === 'blank' }, 'Пустая строка (определение в несколько строк)'));
+    const blockSel = h('select', { 'aria-label': 'В какой блок добавить' },
+      h('option', { value: '' }, 'Без блока'),
+      blocks.map((b) => h('option', { value: String(b.id), selected: b.id === blockId }, b.name)),
+      h('option', { value: '__new' }, '+ Новый блок…'));
+    const newBlockName = h('input', { type: 'text', maxlength: 80, placeholder: 'Название нового блока', hidden: true, 'aria-label': 'Название нового блока' });
     const preview = h('div', { class: 'preview' });
     const summary = h('p', { class: 'muted small' });
     const optIpa = h('input', { type: 'checkbox', checked: topic.module.term_lang === 'en' });
@@ -31,6 +37,7 @@ export async function openBulkImport(topic, onDone) {
       const parsed = parseCards(text.value, { termSep: termSep.value, customSep: customSep.value, cardSep: cardSep.value });
       const seen = new Set();
       rows = parsed.map((p) => {
+        if (p.header) return { ...p, include: true };
         const key = norm(p.term);
         const dupExisting = existing.has(key);
         const dupBatch = seen.has(key);
@@ -40,11 +47,13 @@ export async function openBulkImport(topic, onDone) {
       draw();
     };
 
-    const count = () => rows.filter((r) => r.include && r.term.trim() && r.definition.trim()).length;
+    const cardRows = () => rows.filter((r) => !r.header);
+    const count = () => cardRows().filter((r) => r.include && r.term.trim() && r.definition.trim()).length;
     const refreshCount = () => {
       const n = count();
-      const bad = rows.filter((r) => !r.valid && !(r.term.trim() && r.definition.trim())).length;
-      summary.textContent = rows.length ? `Распознано: ${rows.length}. К добавлению: ${n}.` + (bad ? ` Без разделителя: ${bad} — допишите определение или снимите галочку.` : '') : 'Вставьте текст — карточки появятся здесь.';
+      const bad = cardRows().filter((r) => !r.valid && !(r.term.trim() && r.definition.trim())).length;
+      const nb = new Set(rows.filter((r) => r.header).map((r) => r.block)).size;
+      summary.textContent = rows.length ? `Распознано: ${cardRows().length}. К добавлению: ${n}.` + (nb ? ` Блоков в тексте: ${nb}.` : '') + (bad ? ` Без разделителя: ${bad} — допишите определение или снимите галочку.` : '') : 'Вставьте текст — карточки появятся здесь.';
       saveBtn.disabled = n === 0;
       saveBtn.textContent = n ? `Добавить карточки (${n})` : 'Добавить карточки';
     };
@@ -52,6 +61,7 @@ export async function openBulkImport(topic, onDone) {
     const draw = () => {
       preview.replaceChildren();
       rows.forEach((r) => {
+        if (r.header) { preview.append(h('div', { class: 'prow head' }, h('b', null, `Блок: ${r.block}`))); return; }
         const inc = h('input', { type: 'checkbox', checked: r.include, 'aria-label': 'Добавить', onChange: () => { r.include = inc.checked; refreshCount(); } });
         const t = h('input', { type: 'text', value: r.term, 'aria-label': 'Термин', onInput: () => { r.term = t.value; refreshCount(); } });
         const d = h('input', { type: 'text', value: r.definition.replace(/\n/g, ' ⏎ '), 'aria-label': 'Определение', onInput: () => { r.definition = d.value.replace(/\s*⏎\s*/g, '\n'); if (r.definition.trim() && r.term.trim() && !r.valid) { r.valid = true; r.include = true; inc.checked = true; row.classList.remove('invalid'); } refreshCount(); } });
@@ -62,12 +72,16 @@ export async function openBulkImport(topic, onDone) {
     };
 
     [text, termSep, customSep, cardSep].forEach((el) => el.addEventListener('input', rebuild));
+    blockSel.addEventListener('change', () => { newBlockName.hidden = blockSel.value !== '__new'; if (!newBlockName.hidden) newBlockName.focus(); });
     saveBtn.addEventListener('click', async () => {
-      const cards = rows.filter((r) => r.include).map((r) => ({ term: r.term.trim(), definition: r.definition.trim() })).filter((c) => c.term && c.definition);
+      // блок из текста («### Название») главнее выбранного в списке
+      const newName = blockSel.value === '__new' ? newBlockName.value.trim() : '';
+      if (blockSel.value === '__new' && !newName) { toast('Введите название нового блока', 'error'); newBlockName.focus(); return; }
+      const cards = cardRows().filter((r) => r.include).map((r) => ({ term: r.term.trim(), definition: r.definition.trim(), block: r.block || newName || undefined })).filter((c) => c.term && c.definition);
       if (!cards.length) return;
       saveBtn.disabled = true;
       try {
-        const { ids } = await api.bulk(topic.id, cards);
+        const { ids } = await api.bulk(topic.id, cards, { blockId: blockSel.value && blockSel.value !== '__new' ? Number(blockSel.value) : null });
         if (ids.length && (optIpa.checked || optImg.checked || optStock.checked)) {
           await api.enrich({ cardIds: ids, ipa: optIpa.checked, images: optImg.checked, stock: optStock.checked });
           watchQueue(true);
@@ -80,9 +94,10 @@ export async function openBulkImport(topic, onDone) {
     });
 
     const body = h('div', { class: 'stack' },
-      field('Вставьте текст', text, 'По одной карточке в строке: «термин - определение»'),
+      field('Вставьте текст', text, 'По одной карточке в строке: «термин - определение». Строка «### Название» начинает новый блок.'),
       h('div', { class: 'row gap wrap end-align' },
-        field('Термин / определение', termSep), customSep, field('Карточки разделены', cardSep)),
+        field('Термин / определение', termSep), customSep, field('Карточки разделены', cardSep),
+        h('div', { class: 'stack tight' }, field('Добавить в блок', blockSel), newBlockName)),
       summary, preview,
       h('div', { class: 'stack tight' },
         topic.module.term_lang === 'en' ? h('label', { class: 'check' }, optIpa, ' Подтянуть транскрипцию (нужен интернет)') : null,

@@ -63,3 +63,15 @@ test('sw.js: кеш содержит все файлы приложения (з�
   assert.deepEqual(all.filter((f) => !listed.has(f)), []);
   assert.deepEqual([...listed].filter((f) => f !== './' && !all.includes(f)), []);
 });
+
+test('parse: блоки «### Название»', () => {
+  const r = parseCards('a - б\n### Блок 1\nc - д\ne - ж\n### Блок 2\ng - з');
+  assert.deepEqual(r.filter((x) => x.header).map((x) => x.block), ['Блок 1', 'Блок 2']);
+  assert.deepEqual(r.filter((x) => !x.header).map((x) => [x.term, x.block]), [['a', null], ['c', 'Блок 1'], ['e', 'Блок 1'], ['g', 'Блок 2']]);
+  // режим «пустая строка»: заголовок прямо над первой карточкой блока
+  const m = parseCards('### Глаголы\nrun - бежать\nидти быстро\n\nsit - сидеть\n\n### Имена\ncat - кот', { cardSep: 'blank' });
+  assert.deepEqual(m.filter((x) => !x.header).map((x) => [x.term, x.block, x.definition]),
+    [['run', 'Глаголы', 'бежать\nидти быстро'], ['sit', 'Глаголы', 'сидеть'], ['cat', 'Имена', 'кот']]);
+  const sec = parseSections('## T\na - б\n### B\nc - д');
+  assert.deepEqual(sec, [{ name: 'T', cards: [{ term: 'a', definition: 'б', block: null }, { term: 'c', definition: 'д', block: 'B' }] }]);
+});

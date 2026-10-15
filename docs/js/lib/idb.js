@@ -1,10 +1,10 @@
 // Тонкая обёртка над IndexedDB: все данные живут в браузере устройства.
-export const STORES = ['modules', 'topics', 'cards', 'reviews'];
+export const STORES = ['modules', 'topics', 'cards', 'reviews', 'blocks'];
 
 export function openDb() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB недоступна'));
-    const req = indexedDB.open('kartochki', 1);
+    const req = indexedDB.open('kartochki', 2); // v2: добавлена таблица блоков, существующие данные сохраняются
     req.onupgradeneeded = () => {
       for (const s of STORES) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s, { keyPath: 'id' });
     };

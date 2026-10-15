@@ -66,6 +66,18 @@ export function confirmDialog(text, { okLabel = 'Удалить', danger = true 
   });
 }
 
+/** Окно с одним полем ввода. Возвращает введённый текст или null, если закрыли/отменили. */
+export function promptDialog(title, label, { value = '', placeholder = '', type = 'text', okLabel = 'Сохранить' } = {}) {
+  return new Promise((resolve) => {
+    modal(title, (close) => {
+      const input = h('input', { type, value, placeholder, maxlength: 80, required: true, 'aria-label': label });
+      return h('form', { class: 'stack', onSubmit: (e) => { e.preventDefault(); const v = input.value.trim(); if (v) { resolve(v); close(); } } },
+        field(label, input),
+        h('div', { class: 'row end gap' }, h('button', { type: 'button', class: 'btn', onClick: close }, 'Отмена'), h('button', { type: 'submit', class: 'btn primary' }, okLabel)));
+    }, { onClose: () => resolve(null) });
+  });
+}
+
 /** Сворачиваемый блок со стрелкой справа от заголовка. Состояние запоминается по key. */
 export function fold(title, body, { key, open = false, level = 'h3', cls = '' } = {}) {
   const saved = key ? store.get('fold:' + key, open) : open;
