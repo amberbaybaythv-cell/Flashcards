@@ -227,3 +227,5 @@ body.studying .sidebar, body.studying .menu-btn { display: none; } body.studying
 .blk-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 6px; }
 .stack-bar { display: flex; height: 10px; border-radius: 999px; overflow: hidden; background: var(--surface-2); }
 .stack-bar .seg { min-width: 4px; } .seg.b1 { background: var(--bad); } .seg.b2 { background: var(--warn); } .seg.b3 { background: #d6a84a; } .seg.b4 { background: var(--accent); } .seg.b5 { background: var(--good); }
+.chip.toggle { font-size: 18px; line-height: 1; padding: 4px 12px 6px; font-weight: 700; color: var(--muted); }
+.chip.toggle:hover { color: var(--primary-text); }

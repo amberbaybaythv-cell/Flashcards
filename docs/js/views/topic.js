@@ -179,13 +179,24 @@ export async function renderTopic({ main, id }) {
   function blocksBar() {
     if (!cards.length && !info.blocks.length) return null;
     const chip = (key, label, n) => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(blockFilter === key), onClick: () => setFilter(key) }, label, h('span', { class: 'n' }, n));
-    const chips = [chip('all', 'Все', cards.length)];
-    if (info.blocks.length) {
-      if (info.none.total) chips.push(chip('none', 'Без блока', info.none.total));
-      info.blocks.forEach((b) => chips.push(chip(String(b.id), b.name, b.total)));
+    // стрелка рядом с «Все» сворачивает всю строку блоков; выбор запоминается (общий для всех тем)
+    const open = store.get('blocksBarOpen', true);
+    const toggle = h('button', {
+      class: 'chip toggle', type: 'button', 'aria-expanded': String(open),
+      'aria-label': open ? 'Скрыть блоки' : 'Показать блоки', title: open ? 'Скрыть блоки' : `Показать блоки${info.blocks.length ? ` (${info.blocks.length})` : ''}`,
+      onClick: () => { store.set('blocksBarOpen', !open); draw(); },
+    }, open ? '‹' : '›');
+    const chips = [chip('all', 'Все', cards.length), toggle];
+    if (open) {
+      if (info.blocks.length) {
+        if (info.none.total) chips.push(chip('none', 'Без блока', info.none.total));
+        info.blocks.forEach((b) => chips.push(chip(String(b.id), b.name, b.total)));
+      }
+      chips.push(h('button', { class: 'chip add', type: 'button', onClick: async () => { const b = await newBlock(); if (b) { await reload(); setFilter(b.id); } } }, '+ Блок'));
+      if (cards.length >= 2) chips.push(h('button', { class: 'chip add', type: 'button', title: 'Разложить карточки без блока по группам одинакового размера', onClick: splitIntoBlocks }, 'Разделить на блоки…'));
+    } else if (blockFilter === 'none') {
+      chips.push(chip('none', 'Без блока', info.none.total)); // чтобы было видно, что показан не весь список
     }
-    chips.push(h('button', { class: 'chip add', type: 'button', onClick: async () => { const b = await newBlock(); if (b) { await reload(); setFilter(b.id); } } }, '+ Блок'));
-    if (cards.length >= 2) chips.push(h('button', { class: 'chip add', type: 'button', title: 'Разложить карточки без блока по группам одинакового размера', onClick: splitIntoBlocks }, 'Разделить на блоки…'));
     const b = activeBlock();
     return h('div', null,
       h('div', { class: 'blocks-bar', role: 'group', 'aria-label': 'Блоки темы' }, chips),
