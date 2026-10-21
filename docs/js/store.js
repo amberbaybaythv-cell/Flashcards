@@ -177,14 +177,15 @@ function exportModuleData(m) {
   };
 }
 
-async function importOne(d, ops) {
-  const f = moduleFields(d.module || {});
-  const mod = { id: nextId('modules'), ...f, created_at: nowIso() };
-  M.set(mod.id, mod); ops.push({ store: 'modules', put: mod });
-  let pos = 0, count = 0;
-  for (const t of Array.isArray(d.topics) ? d.topics : []) {
+/** Добавляет темы (с карточками и блоками) в модуль. skipExisting: темы с уже имеющимся названием пропускаются. */
+async function importTopicsInto(mod, topicsData, ops, { skipExisting = false } = {}) {
+  let pos = Math.max(0, ...topicsOf(mod.id).map((t) => t.position)), count = 0, added = 0, skipped = 0;
+  const names = new Set(topicsOf(mod.id).map((t) => t.name.trim().toLowerCase()));
+  for (const t of Array.isArray(topicsData) ? topicsData : []) {
     const name = str(t.name);
     if (!name) continue;
+    if (skipExisting && names.has(name.toLowerCase())) { skipped++; continue; }
+    names.add(name.toLowerCase()); added++;
     const topic = { id: nextId('topics'), module_id: mod.id, name, position: ++pos, created_at: nowIso() };
     T.set(topic.id, topic); ops.push({ store: 'topics', put: topic });
     for (const b of Array.isArray(t.blocks) ? t.blocks : []) if (str(b?.name)) ensureBlock(topic.id, b.name, ops);
@@ -207,7 +208,15 @@ async function importOne(d, ops) {
       C.set(card.id, card); ops.push({ store: 'cards', put: card }); count++;
     }
   }
-  return { moduleId: mod.id, cards: count };
+  return { cards: count, topics: added, skipped };
+}
+
+async function importOne(d, ops) {
+  const f = moduleFields(d.module || {});
+  const mod = { id: nextId('modules'), ...f, created_at: nowIso() };
+  M.set(mod.id, mod); ops.push({ store: 'modules', put: mod });
+  const r = await importTopicsInto(mod, d.topics, ops);
+  return { moduleId: mod.id, cards: r.cards };
 }
 
 const DEMO = {
@@ -551,6 +560,18 @@ export const api = wrapAll({
     } else fail('Это не файл экспорта этого приложения');
     await save(ops);
     return res;
+  },
+  /** Добавляет темы из файла экспорта (или разобранного текста) в уже существующий модуль. Темы с такими же названиями пропускаются. */
+  async importTopics(moduleId, data) {
+    const mod = byId(M, moduleId, 'Модуль');
+    let topics;
+    if (data?.format === 'quizlet-local' && Array.isArray(data.topics)) topics = data.topics;
+    else if (data?.format === 'quizlet-local-backup' && Array.isArray(data.modules)) topics = data.modules.flatMap((m) => m.topics || []);
+    else fail('Это не файл с темами этого приложения');
+    const ops = [];
+    const r = await importTopicsInto(mod, topics, ops, { skipExisting: true });
+    await save(ops);
+    return r;
   },
   downloadModule(id, fmt) {
     const m = byId(M, id, 'Модуль');

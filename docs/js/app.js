@@ -6,7 +6,7 @@ import { renderTopic } from './views/topic.js';
 import { renderSearch } from './views/search.js';
 import { renderStudy } from './views/study.js';
 import { renderSettings } from './views/settings.js';
-import { openImportModule } from './views/importer.js';
+import { openImportModule, openImportTopics } from './views/importer.js';
 
 export const state = { tree: { modules: [] }, config: {} };
 let cleanup = null;
@@ -101,6 +101,7 @@ export function openModuleForm(m) {
         h('h3', null, 'Действия с модулем'),
         h('div', { class: 'row gap wrap' },
           h('button', { class: 'btn', onClick: () => { close(); openTopicForm(m.id); } }, '+ Тема'),
+          h('button', { class: 'btn', onClick: () => { close(); openImportTopics(m); } }, 'Импорт тем из файла'),
           h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'json') }, 'Экспорт JSON'),
           h('button', { class: 'btn', onClick: () => api.downloadModule(m.id, 'txt') }, 'Экспорт текст'),
           h('button', { class: 'btn danger-ghost', onClick: () => deleteModule(m, close) }, 'Удалить модуль'))));

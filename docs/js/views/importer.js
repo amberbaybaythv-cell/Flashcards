@@ -1,7 +1,7 @@
 import { h, modal, field, toast, store } from '../ui.js';
 import { api } from '../api.js';
 import { parseCards, parseSections, TERM_SEPS } from '../lib/parse.js';
-import { refreshTree, go, watchQueue } from '../app.js';
+import { refreshTree, go, watchQueue, render } from '../app.js';
 
 const norm = (s) => s.trim().toLowerCase().replace(/\s+/g, ' ');
 
@@ -107,6 +107,58 @@ export async function openBulkImport(topic, onDone, { blockId = null } = {}) {
     rebuild();
     return body;
   }, { wide: true });
+}
+
+/** Добавление тем из файла в существующий модуль: JSON (экспорт приложения) или текст с заголовками «## Тема». */
+export function openImportTopics(mod) {
+  modal(`Импорт тем в «${mod.name}»`, (close) => {
+    const file = h('input', { type: 'file', accept: '.json,.txt,text/plain,application/json' });
+    const sep = h('select', null, Object.entries(TERM_SEPS).filter(([k]) => k !== 'custom').map(([k, v]) => h('option', { value: k }, v.label)));
+    const info = h('p', { class: 'muted small', 'aria-live': 'polite' }, 'Выберите файл.');
+    const btn = h('button', { class: 'btn primary', type: 'button', disabled: true }, 'Добавить темы');
+    let payload = null;
+
+    const read = async () => {
+      payload = null; btn.disabled = true;
+      const f = file.files[0];
+      if (!f) { info.textContent = 'Выберите файл.'; return; }
+      try {
+        const content = await f.text();
+        let data;
+        if (f.name.toLowerCase().endsWith('.json') || content.trimStart().startsWith('{')) {
+          try { data = JSON.parse(content); } catch { throw new Error('Файл повреждён: это не JSON'); }
+          sep.disabled = true;
+        } else {
+          sep.disabled = false;
+          const sections = parseSections(content, { termSep: sep.value, cardSep: 'newline' });
+          if (!sections) throw new Error('В текстовом файле нет заголовков «## Название темы».');
+          data = { format: 'quizlet-local', topics: sections };
+        }
+        const topics = data.format === 'quizlet-local-backup' ? (data.modules || []).flatMap((m) => m.topics || []) : data.topics;
+        if (!Array.isArray(topics) || (data.format !== 'quizlet-local' && data.format !== 'quizlet-local-backup')) throw new Error('Это не файл с темами этого приложения');
+        const cards = topics.reduce((a, t) => a + (t.cards?.length || 0), 0);
+        info.textContent = `Найдено тем: ${topics.length}, карточек: ${cards}. Темы с такими же названиями, как уже есть в модуле, будут пропущены.`;
+        payload = data; btn.disabled = !topics.length;
+      } catch (e) { info.textContent = e.message; }
+    };
+    file.addEventListener('change', read);
+    sep.addEventListener('change', read);
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const r = await api.importTopics(mod.id, payload);
+        close();
+        await refreshTree();
+        toast(`Добавлено тем: ${r.topics}, карточек: ${r.cards}` + (r.skipped ? `. Пропущено (уже есть): ${r.skipped}` : ''), 'success');
+        go(`#/m/${mod.id}`);
+        render();
+      } catch (e) { toast(e.message, 'error'); btn.disabled = false; }
+    });
+    return h('div', { class: 'stack' },
+      h('p', { class: 'muted' }, 'Темы из файла добавятся в этот модуль вместе с карточками. Файл: JSON, выгруженный из приложения, или текст, где темы отмечены строками «## Тема», а карточки — «термин - определение».'),
+      field('Файл', file), field('Разделитель термина и определения (для текстового файла)', sep), info,
+      h('div', { class: 'row end gap' }, h('button', { class: 'btn', type: 'button', onClick: close }, 'Отмена'), btn));
+  });
 }
 
 /** Импорт модуля из JSON (экспорт приложения) или текстового файла с заголовками «## Тема». */
