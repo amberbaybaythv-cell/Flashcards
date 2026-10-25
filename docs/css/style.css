@@ -229,3 +229,11 @@ body.studying .sidebar, body.studying .menu-btn { display: none; } body.studying
 .stack-bar .seg { min-width: 4px; } .seg.b1 { background: var(--bad); } .seg.b2 { background: var(--warn); } .seg.b3 { background: #d6a84a; } .seg.b4 { background: var(--accent); } .seg.b5 { background: var(--good); }
 .chip.toggle { font-size: 18px; line-height: 1; padding: 4px 12px 6px; font-weight: 700; color: var(--muted); }
 .chip.toggle:hover { color: var(--primary-text); }
+
+/* Синхронизация */
+.sync-line { display: block; padding: 4px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; }
+.sync-line:hover { background: var(--surface-2); text-decoration: none; }
+.sync-line[data-state="offline"], .sync-line[data-state="error"] { color: var(--warn); }
+.qr-box { display: grid; place-items: center; padding: 14px; background: #fff; border-radius: 14px; width: fit-content; margin: 0 auto; }
+canvas.qr { width: min(300px, 70vw); height: auto; image-rendering: pixelated; display: block; }
+ol.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }

@@ -1,12 +1,13 @@
 // Тонкая обёртка над IndexedDB: все данные живут в браузере устройства.
-export const STORES = ['modules', 'topics', 'cards', 'reviews', 'blocks'];
+export const STORES = ['modules', 'topics', 'cards', 'reviews', 'blocks', 'tombstones'];
+const KEY = { tombstones: 'uid' }; // у остальных таблиц ключ id
 
 export function openDb() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('IndexedDB недоступна'));
-    const req = indexedDB.open('kartochki', 2); // v2: добавлена таблица блоков, существующие данные сохраняются
+    const req = indexedDB.open('kartochki', 3); // v2: блоки, v3: «надгробия» удалений для синхронизации; существующие данные сохраняются
     req.onupgradeneeded = () => {
-      for (const s of STORES) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s, { keyPath: 'id' });
+      for (const s of STORES) if (!req.result.objectStoreNames.contains(s)) req.result.createObjectStore(s, { keyPath: KEY[s] || 'id' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -34,5 +35,15 @@ export function commit(db, ops) {
       const e = tx.error;
       reject(e && e.name === 'QuotaExceededError' ? new Error('На устройстве не хватает места для сохранения') : e || new Error('Не удалось сохранить данные'));
     };
+  });
+}
+
+/** Полностью очищает перечисленные таблицы (для «заменить данные устройства данными из облака»). */
+export function clearStores(db, names) {
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(names, 'readwrite');
+    names.forEach((n) => tx.objectStore(n).clear());
+    tx.oncomplete = () => resolve();
+    tx.onerror = tx.onabort = () => reject(tx.error || new Error('Не удалось очистить данные'));
   });
 }

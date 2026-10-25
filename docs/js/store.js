@@ -1,25 +1,32 @@
 // Локальное хранилище: данные лежат в памяти и записываются в IndexedDB браузера при каждом изменении.
 // Интерфейс (api) повторяет бывший серверный API, поэтому экраны почти не менялись.
-import { openDb, getAll, commit, STORES } from './lib/idb.js';
+import { openDb, getAll, commit, clearStores, STORES } from './lib/idb.js';
 import { INTERVALS, applyAnswer, localDate, addDays } from './lib/leitner.js';
 import {
   lookupIpa, generateImage, buildPrompt, imageProviderName, imageConfigured, toJpegDataUrl,
 } from './lib/enrich.js';
 import { searchStock, downloadStock, buildQueries } from './lib/stock.js';
+import { PROGRESS_FIELDS } from './lib/sync-merge.js';
 
 const LANGS = ['en', 'ru'];
 const M = new Map(), T = new Map(), C = new Map(), B = new Map();
 let R = [];
+const TOMB = new Map(); // uid → { uid, kind, t }: удалённые записи, чтобы удаление дошло до других устройств
 const ids = { modules: 0, topics: 0, cards: 0, reviews: 0, blocks: 0 };
+const KINDS = ['modules', 'topics', 'blocks', 'cards'];
+const newUid = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
+const stampOf = (s) => { const v = Date.parse(/[TZ]/.test(String(s)) ? s : `${String(s).replace(' ', 'T')}Z`); return Number.isFinite(v) ? v : Date.now(); };
 let db = null;
 export const storage = { persistent: false, error: null };
 
 const ready = (async () => {
   try {
     db = await openDb();
-    const [m, t, c, r, bl] = await Promise.all(STORES.map((s) => getAll(db, s)));
+    const [m, t, c, r, bl, tb] = await Promise.all(STORES.map((s) => getAll(db, s)));
+    tb.forEach((x) => TOMB.set(x.uid, x));
     m.forEach((x) => M.set(x.id, x)); t.forEach((x) => T.set(x.id, x)); c.forEach((x) => C.set(x.id, x)); bl.forEach((x) => B.set(x.id, x)); R = r;
     ids.blocks = Math.max(0, ...bl.map((x) => x.id));
+    await migrateUids(); // данные, созданные до синхронизации, получают uid и отметки времени
     ids.modules = Math.max(0, ...m.map((x) => x.id)); ids.topics = Math.max(0, ...t.map((x) => x.id));
     ids.cards = Math.max(0, ...c.map((x) => x.id)); ids.reviews = Math.max(0, ...r.map((x) => x.id));
     storage.persistent = true;
@@ -31,7 +38,41 @@ const ready = (async () => {
 
 const str = (v) => (typeof v === 'string' ? v.trim() : '');
 const fail = (msg) => { throw new Error(msg); };
-const save = (ops) => commit(db, ops);
+/**
+ * Запись изменений. Попутно ставит отметки времени (для слияния при синхронизации) и «надгробия» удалённых записей.
+ * progress: true у операции с карточкой означает, что изменился только прогресс (коробка, дата повторения, счётчики).
+ */
+const save = async (ops) => {
+  const now = Date.now();
+  for (const op of [...ops]) {
+    if (op.put && KINDS.includes(op.store)) {
+      if (op.store === 'cards' && op.progress) op.put.pupdated = now; else op.put.updated = now;
+    } else if (op.del != null && op.uid && KINDS.includes(op.store)) {
+      const t = { uid: op.uid, kind: op.store, t: now };
+      TOMB.set(t.uid, t);
+      ops.push({ store: 'tombstones', put: t });
+    }
+  }
+  await commit(db, ops);
+  if (ops.length) { bridge.version++; bridge.onChange?.(); }
+};
+
+/** Старые данные (до синхронизации) получают uid и отметки времени, чтобы их можно было сопоставлять между устройствами. */
+async function migrateUids() {
+  const ops = [];
+  const fix = (store, map) => {
+    for (const x of map.values()) {
+      let ch = false;
+      if (!x.uid) { x.uid = newUid(); ch = true; }
+      if (!x.updated) { x.updated = stampOf(x.created_at); ch = true; }
+      if (store === 'cards' && !x.pupdated) { x.pupdated = x.updated; ch = true; }
+      if (ch) ops.push({ store, put: x });
+    }
+  };
+  fix('modules', M); fix('topics', T); fix('blocks', B); fix('cards', C);
+  for (const r of R) if (!r.uid) { r.uid = newUid(); ops.push({ store: 'reviews', put: r }); }
+  if (ops.length) await commit(db, ops);
+}
 const nextId = (s) => ++ids[s];
 const byId = (map, id, what) => map.get(Number(id)) || fail(`${what} не найден`);
 const copy = (o) => ({ ...o });
@@ -55,7 +96,7 @@ function ensureBlock(tid, name, ops) {
   name = str(name);
   const found = blocksOf(tid).find((b) => sameName(b.name, name));
   if (found) return found;
-  const b = { id: nextId('blocks'), topic_id: tid, name, position: Math.max(0, ...blocksOf(tid).map((x) => x.position)) + 1, created_at: nowIso() };
+  const b = { id: nextId('blocks'), uid: newUid(), updated: Date.now(), topic_id: tid, name, position: Math.max(0, ...blocksOf(tid).map((x) => x.position)) + 1, created_at: nowIso() };
   B.set(b.id, b); ops.push({ store: 'blocks', put: b });
   return b;
 }
@@ -87,14 +128,14 @@ function scoped(scope, id, block) {
 
 function newCard(topicId, term, definition, extra = {}) {
   return {
-    id: nextId('cards'), topic_id: topicId, block_id: null, term, definition, ipa: null, ipa_tried: 0, image: null, image_credit: null,
+    id: nextId('cards'), uid: newUid(), updated: Date.now(), pupdated: Date.now(), topic_id: topicId, block_id: null, term, definition, ipa: null, ipa_tried: 0, image: null, image_credit: null,
     box: 1, learned: 0, next_review: localDate(), correct_count: 0, wrong_count: 0, created_at: nowIso(), ...extra,
   };
 }
 
 function removeCards(cardList, ops) {
   const set = new Set(cardList.map((c) => c.id));
-  for (const c of cardList) { C.delete(c.id); ops.push({ store: 'cards', del: c.id }); }
+  for (const c of cardList) { C.delete(c.id); ops.push({ store: 'cards', del: c.id, uid: c.uid }); }
   R = R.filter((r) => { if (set.has(r.card_id)) { ops.push({ store: 'reviews', del: r.id }); return false; } return true; });
 }
 
@@ -186,7 +227,7 @@ async function importTopicsInto(mod, topicsData, ops, { skipExisting = false } =
     if (!name) continue;
     if (skipExisting && names.has(name.toLowerCase())) { skipped++; continue; }
     names.add(name.toLowerCase()); added++;
-    const topic = { id: nextId('topics'), module_id: mod.id, name, position: ++pos, created_at: nowIso() };
+    const topic = { id: nextId('topics'), uid: newUid(), updated: Date.now(), module_id: mod.id, name, position: ++pos, created_at: nowIso() };
     T.set(topic.id, topic); ops.push({ store: 'topics', put: topic });
     for (const b of Array.isArray(t.blocks) ? t.blocks : []) if (str(b?.name)) ensureBlock(topic.id, b.name, ops);
     for (const c of Array.isArray(t.cards) ? t.cards : []) {
@@ -213,7 +254,7 @@ async function importTopicsInto(mod, topicsData, ops, { skipExisting = false } =
 
 async function importOne(d, ops) {
   const f = moduleFields(d.module || {});
-  const mod = { id: nextId('modules'), ...f, created_at: nowIso() };
+  const mod = { id: nextId('modules'), uid: newUid(), updated: Date.now(), ...f, created_at: nowIso() };
   M.set(mod.id, mod); ops.push({ store: 'modules', put: mod });
   const r = await importTopicsInto(mod, d.topics, ops);
   return { moduleId: mod.id, cards: r.cards };
@@ -256,7 +297,7 @@ export const api = wrapAll({
   },
 
   async addModule(b) {
-    const m = { id: nextId('modules'), ...moduleFields(b), created_at: nowIso() };
+    const m = { id: nextId('modules'), uid: newUid(), updated: Date.now(), ...moduleFields(b), created_at: nowIso() };
     M.set(m.id, m); await save([{ store: 'modules', put: m }]);
     return copy(m);
   },
@@ -270,10 +311,10 @@ export const api = wrapAll({
     const m = byId(M, id, 'Модуль'), ops = [];
     for (const t of topicsOf(m.id)) {
       removeCards(cardsOfTopic(t.id), ops);
-      for (const b of blocksOf(t.id)) { B.delete(b.id); ops.push({ store: 'blocks', del: b.id }); }
-      T.delete(t.id); ops.push({ store: 'topics', del: t.id });
+      for (const b of blocksOf(t.id)) { B.delete(b.id); ops.push({ store: 'blocks', del: b.id, uid: b.uid }); }
+      T.delete(t.id); ops.push({ store: 'topics', del: t.id, uid: t.uid });
     }
-    M.delete(m.id); ops.push({ store: 'modules', del: m.id });
+    M.delete(m.id); ops.push({ store: 'modules', del: m.id, uid: m.uid });
     await save(ops);
     return { ok: true };
   },
@@ -287,7 +328,7 @@ export const api = wrapAll({
     if (!name) fail('Укажите название темы');
     byId(M, mid, 'Модуль');
     const pos = Math.max(0, ...topicsOf(Number(mid)).map((t) => t.position)) + 1;
-    const t = { id: nextId('topics'), module_id: Number(mid), name, position: pos, created_at: nowIso() };
+    const t = { id: nextId('topics'), uid: newUid(), updated: Date.now(), module_id: Number(mid), name, position: pos, created_at: nowIso() };
     T.set(t.id, t); await save([{ store: 'topics', put: t }]);
     return copy(t);
   },
@@ -301,8 +342,8 @@ export const api = wrapAll({
   async delTopic(id) {
     const t = byId(T, id, 'Тема'), ops = [];
     removeCards(cardsOfTopic(t.id), ops);
-    for (const b of blocksOf(t.id)) { B.delete(b.id); ops.push({ store: 'blocks', del: b.id }); }
-    T.delete(t.id); ops.push({ store: 'topics', del: t.id });
+    for (const b of blocksOf(t.id)) { B.delete(b.id); ops.push({ store: 'blocks', del: b.id, uid: b.uid }); }
+    T.delete(t.id); ops.push({ store: 'topics', del: t.id, uid: t.uid });
     await save(ops);
     return { ok: true };
   },
@@ -437,8 +478,8 @@ export const api = wrapAll({
       const ok = !!a.correct;
       Object.assign(c, applyAnswer(c, ok, today));
       c.correct_count += ok ? 1 : 0; c.wrong_count += ok ? 0 : 1;
-      const r = { id: nextId('reviews'), card_id: c.id, day: today, correct: ok ? 1 : 0 };
-      R.push(r); ops.push({ store: 'cards', put: c }, { store: 'reviews', put: r });
+      const r = { id: nextId('reviews'), uid: newUid(), card_id: c.id, day: today, correct: ok ? 1 : 0 };
+      R.push(r); ops.push({ store: 'cards', put: c, progress: true }, { store: 'reviews', put: r });
     }
     await save(ops);
     return { ok: true };
@@ -498,7 +539,7 @@ export const api = wrapAll({
   async delBlock(id) {
     const b = byId(B, id, 'Блок'), ops = [];
     for (const c of cardsOfTopic(b.topic_id)) if (c.block_id === b.id) { c.block_id = null; ops.push({ store: 'cards', put: c }); }
-    B.delete(b.id); ops.push({ store: 'blocks', del: b.id });
+    B.delete(b.id); ops.push({ store: 'blocks', del: b.id, uid: b.uid });
     await save(ops);
     return { ok: true };
   },
@@ -599,3 +640,131 @@ export const api = wrapAll({
     return res;
   },
 });
+
+/* ---------- Мост для синхронизации (используется модулем sync.js) ---------- */
+export const bridge = {
+  ready: () => ready,
+  version: 0,       // растёт при каждом локальном изменении: по нему sync.js понимает, что есть что отправлять
+  onChange: null,   // вызывается после локального изменения
+
+  /** Снимок данных со ссылками по uid. Сами картинки не входят: они уходят в облако отдельными файлами. */
+  snapshot() {
+    const mu = (id) => M.get(id)?.uid, tu = (id) => T.get(id)?.uid;
+    return {
+      modules: [...M.values()].map((m) => ({ uid: m.uid, updated: m.updated, name: m.name, description: m.description || '', term_lang: m.term_lang, def_lang: m.def_lang, created_at: m.created_at })),
+      topics: [...T.values()].filter((t) => mu(t.module_id)).map((t) => ({ uid: t.uid, updated: t.updated, module_uid: mu(t.module_id), name: t.name, position: t.position, created_at: t.created_at })),
+      blocks: [...B.values()].filter((b) => tu(b.topic_id)).map((b) => ({ uid: b.uid, updated: b.updated, topic_uid: tu(b.topic_id), name: b.name, position: b.position, created_at: b.created_at })),
+      cards: [...C.values()].filter((c) => tu(c.topic_id)).map((c) => ({
+        uid: c.uid, updated: c.updated, pupdated: c.pupdated, topic_uid: tu(c.topic_id), block_uid: (c.block_id && B.get(c.block_id)?.uid) || null,
+        term: c.term, definition: c.definition, ipa: c.ipa ?? null, ipa_tried: c.ipa_tried || 0, image_credit: c.image_credit || null, created_at: c.created_at,
+        box: c.box, learned: c.learned, next_review: c.next_review, correct_count: c.correct_count, wrong_count: c.wrong_count,
+      })),
+      reviews: R.filter((r) => C.get(r.card_id)).map((r) => [r.uid, C.get(r.card_id).uid, r.day, r.correct]),
+      tombstones: [...TOMB.values()].map((t) => [t.uid, t.kind, t.t]),
+    };
+  },
+
+  /** uid карточки → data-URL её картинки. */
+  cardImages: () => new Map([...C.values()].filter((c) => c.image).map((c) => [c.uid, c.image])),
+
+  counts: () => ({ modules: M.size, topics: T.size, cards: C.size }),
+
+  /**
+   * Приводит локальные данные к результату слияния. images: ref → data-URL картинок, скачанных из облака.
+   * Записывает напрямую, минуя save(), чтобы не менять отметки времени и не вызывать повторную отправку.
+   */
+  async apply(merged, images = new Map(), known = null) {
+    await ready;
+    const ops = [], stat = { created: 0, updated: 0, deleted: 0 };
+    const index = (map) => new Map([...map.values()].map((x) => [x.uid, x]));
+    const Lm = index(M), Lt = index(T), Lb = index(B), Lc = index(C);
+    const keep = { m: new Set(), t: new Set(), b: new Set(), c: new Set() };
+
+    for (const m of merged.modules) {
+      keep.m.add(m.uid);
+      let l = Lm.get(m.uid);
+      if (l && !(m.updated > l.updated)) continue;
+      if (!l) { l = { id: nextId('modules'), uid: m.uid }; M.set(l.id, l); Lm.set(l.uid, l); stat.created++; } else stat.updated++;
+      Object.assign(l, { updated: m.updated, name: m.name, description: m.description || '', term_lang: m.term_lang, def_lang: m.def_lang, created_at: m.created_at });
+      ops.push({ store: 'modules', put: l });
+    }
+    for (const t of merged.topics) {
+      const mod = Lm.get(t.module_uid);
+      if (!mod) continue;
+      keep.t.add(t.uid);
+      let l = Lt.get(t.uid);
+      if (l && !(t.updated > l.updated)) continue;
+      if (!l) { l = { id: nextId('topics'), uid: t.uid }; T.set(l.id, l); Lt.set(l.uid, l); stat.created++; } else stat.updated++;
+      Object.assign(l, { updated: t.updated, module_id: mod.id, name: t.name, position: t.position, created_at: t.created_at });
+      ops.push({ store: 'topics', put: l });
+    }
+    for (const b of merged.blocks) {
+      const top = Lt.get(b.topic_uid);
+      if (!top) continue;
+      keep.b.add(b.uid);
+      let l = Lb.get(b.uid);
+      if (l && !(b.updated > l.updated)) continue;
+      if (!l) { l = { id: nextId('blocks'), uid: b.uid }; B.set(l.id, l); Lb.set(l.uid, l); stat.created++; } else stat.updated++;
+      Object.assign(l, { updated: b.updated, topic_id: top.id, name: b.name, position: b.position, created_at: b.created_at });
+      ops.push({ store: 'blocks', put: l });
+    }
+    for (const c of merged.cards) {
+      const top = Lt.get(c.topic_uid);
+      if (!top) continue;
+      keep.c.add(c.uid);
+      let l = Lc.get(c.uid), changed = false;
+      const isNew = !l;
+      if (isNew) {
+        l = { id: nextId('cards'), uid: c.uid, image: null, updated: -1, pupdated: -1 };
+        C.set(l.id, l); Lc.set(l.uid, l); stat.created++; changed = true;
+      }
+      if (c.updated > l.updated) {
+        Object.assign(l, {
+          updated: c.updated, topic_id: top.id, block_id: (c.block_uid && Lb.get(c.block_uid)?.id) || null,
+          term: c.term, definition: c.definition, ipa: c.ipa ?? null, ipa_tried: c.ipa_tried || 0, image_credit: c.image_credit || null, created_at: c.created_at,
+        });
+        if (!c.image_ref) l.image = null; else if (images.has(c.image_ref)) l.image = images.get(c.image_ref);
+        changed = true;
+      }
+      if ((c.pupdated || 0) > (l.pupdated || 0)) {
+        for (const k of PROGRESS_FIELDS) l[k] = c[k];
+        l.pupdated = c.pupdated;
+        changed = true;
+      }
+      if (changed) { ops.push({ store: 'cards', put: l }); if (!isNew) stat.updated++; }
+    }
+
+    // записи, которых нет в результате слияния (удалены на другом устройстве)
+    for (const [uid, l] of Lc) if (!keep.c.has(uid) && (!known || known.has(uid))) { C.delete(l.id); ops.push({ store: 'cards', del: l.id }); stat.deleted++; }
+    for (const [uid, l] of Lb) if (!keep.b.has(uid) && (!known || known.has(uid))) { B.delete(l.id); ops.push({ store: 'blocks', del: l.id }); stat.deleted++; }
+    for (const [uid, l] of Lt) if (!keep.t.has(uid) && (!known || known.has(uid))) { T.delete(l.id); ops.push({ store: 'topics', del: l.id }); stat.deleted++; }
+    for (const [uid, l] of Lm) if (!keep.m.has(uid) && (!known || known.has(uid))) { M.delete(l.id); ops.push({ store: 'modules', del: l.id }); stat.deleted++; }
+
+    // история ответов
+    const have = new Set(R.map((r) => r.uid)), want = new Set(merged.reviews.map((r) => r[0]));
+    for (const [uid, cuid, day, correct] of merged.reviews) {
+      const c = Lc.get(cuid);
+      if (have.has(uid) || !c) continue;
+      const r = { id: nextId('reviews'), uid, card_id: c.id, day, correct };
+      R.push(r); ops.push({ store: 'reviews', put: r });
+    }
+    R = R.filter((r) => { if (want.has(r.uid) || (known && !known.has(r.uid))) return true; ops.push({ store: 'reviews', del: r.id }); return false; });
+
+    // надгробия
+    const nt = new Map(merged.tombstones.map(([uid, kind, t]) => [uid, { uid, kind, t }]));
+    for (const uid of TOMB.keys()) if (!nt.has(uid)) ops.push({ store: 'tombstones', del: uid });
+    for (const [uid, t] of nt) if (TOMB.get(uid)?.t !== t.t) ops.push({ store: 'tombstones', put: t });
+    TOMB.clear(); nt.forEach((v, k) => TOMB.set(k, v));
+
+    await commit(db, ops);
+    return stat;
+  },
+
+  /** Стирает все данные устройства (для «заменить данными из облака»). */
+  async reset() {
+    await ready;
+    if (db) await clearStores(db, STORES);
+    M.clear(); T.clear(); C.clear(); B.clear(); TOMB.clear(); R = [];
+    Object.keys(ids).forEach((k) => { ids[k] = 0; });
+  },
+};

@@ -6,6 +6,9 @@ import { renderTopic } from './views/topic.js';
 import { renderSearch } from './views/search.js';
 import { renderStudy } from './views/study.js';
 import { renderSettings } from './views/settings.js';
+import { renderConnect } from './views/connect.js';
+import { startSync, getStatus } from './sync.js';
+import { statusText } from './views/syncui.js';
 import { openImportModule, openImportTopics } from './views/importer.js';
 
 export const state = { tree: { modules: [] }, config: {} };
@@ -45,7 +48,8 @@ export function parseHash() {
 }
 export const go = (hash) => { if (location.hash === hash) render(); else location.hash = hash; };
 
-export async function render() {
+export async function render(opts = {}) {
+  const keepScroll = !!opts && opts.keepScroll === true; // аргументом может прийти событие hashchange
   const { parts, query } = parseHash();
   if (cleanup) { try { cleanup(); } catch { /* ignore */ } cleanup = null; }
   const main = clear($('#main'));
@@ -60,6 +64,7 @@ export async function render() {
     else if (parts[0] === 'search') res = renderSearch(ctx);
     else if (parts[0] === 'study') res = renderStudy(ctx);
     else if (parts[0] === 'settings') res = renderSettings(ctx);
+    else if (parts[0] === 'connect') res = renderConnect(ctx);
     else main.append(h('p', { class: 'muted' }, 'Страница не найдена'));
     const out = await res;
     cleanup = typeof out === 'function' ? out : null;
@@ -67,8 +72,7 @@ export async function render() {
     clear(main).append(h('div', { class: 'empty' }, h('h2', null, 'Что-то пошло не так'), h('p', { class: 'muted' }, e.message)));
   }
   renderSidebar();
-  main.scrollTop = 0;
-  window.scrollTo(0, 0);
+  if (!keepScroll) { main.scrollTop = 0; window.scrollTo(0, 0); }
 }
 
 /* ---------- Боковая панель ---------- */
@@ -137,6 +141,27 @@ export function openTopicForm(moduleId, t) {
   });
 }
 
+/* ---------- Строка состояния синхронизации ---------- */
+const syncLine = h('a', { class: 'sync-line small', href: '#/settings', hidden: true });
+function updateSyncLine(s = getStatus()) {
+  syncLine.hidden = s.state === 'off';
+  syncLine.textContent = statusText(s);
+  syncLine.dataset.state = s.state;
+  syncLine.title = s.error || 'Синхронизация между устройствами';
+}
+window.addEventListener('sync-status', (e) => updateSyncLine(e.detail));
+
+// Пришли данные с другого устройства: обновляем список и страницу, если это никому не мешает
+window.addEventListener('data-synced', async () => {
+  await refreshTree();
+  const { parts } = parseHash();
+  if (parts[0] === 'study' || parts[0] === 'connect') return;
+  const el = document.activeElement;
+  const typing = el && $('#main').contains(el) && ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName);
+  if (typing || $('#modals .backdrop')) { toast('С другого устройства пришли обновления: они появятся после обновления страницы', 'info'); return; }
+  render({ keepScroll: true });
+});
+
 function renderSidebar() {
   const sb = clear($('#sidebar'));
   const { parts } = parseHash();
@@ -178,6 +203,7 @@ function renderSidebar() {
     h('a', { href: '#/', class: 'brand' }, h('span', { class: 'logo' }, '▤'), 'Карточки'),
     search, tree,
     h('div', { class: 'sidebar-foot' },
+      syncLine,
       h('button', { class: 'btn primary block', onClick: () => openModuleForm() }, '+ Новый модуль'),
       h('div', { class: 'row gap' },
         h('button', { class: 'btn grow', onClick: () => openImportModule() }, 'Импорт'),
@@ -235,6 +261,8 @@ if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   } catch (e) { toast(e.message, 'error'); }
   await render();
   watchQueue();
+  updateSyncLine();
+  startSync();
 })();
 
 export { cardsWord };
