@@ -10,6 +10,7 @@ export function statusText(s) {
   if (s.state === 'syncing') return '⟳ Синхронизация…';
   if (s.state === 'offline') return '⚠ Нет сети: синхронизируем позже';
   if (s.state === 'error') return '⚠ Ошибка синхронизации';
+  if (s.state === 'idle' && s.skipped) return `✓ Синхронизировано, но ${s.skipped} карт. без картинки: её нет в облаке`;
   if (s.state === 'idle') return s.lastSync ? `✓ Синхронизировано · ${timeStr(s.lastSync)}` : '✓ Подключено';
   return '';
 }

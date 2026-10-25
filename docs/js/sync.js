@@ -22,7 +22,7 @@ function setConfig(patch) {
 export const isConnected = () => { const c = getConfig(); return !!(c.repo && c.token); };
 
 /* ---------- статус ---------- */
-const status = { state: 'off', lastSync: null, error: null };
+const status = { state: 'off', lastSync: null, error: null, skipped: 0 };
 function setStatus(patch) {
   Object.assign(status, patch);
   window.dispatchEvent(new CustomEvent('sync-status', { detail: getStatus() }));
@@ -49,8 +49,11 @@ function blobToDataUrl(blob) {
   return new Promise((resolve, reject) => { const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.onerror = reject; fr.readAsDataURL(blob); });
 }
 
+/** Скачивает картинку. Если файла в облаке нет, возвращает null: это не должно останавливать синхронизацию текста и прогресса. */
 async function downloadImage(cfg, ref) {
-  const blob = await getBlob(cfg.token, cfg.repo, `images/${ref}`);
+  let blob;
+  try { blob = await getBlob(cfg.token, cfg.repo, `images/${ref}`); }
+  catch (e) { if (e instanceof GitHubError && e.status === 404) return null; throw e; }
   const mime = MIME[ref.split('.').pop()] || 'image/jpeg';
   return blobToDataUrl(new Blob([await blob.arrayBuffer()], { type: mime }));
 }
@@ -87,16 +90,27 @@ async function cycle({ force }) {
     const r = await imageRef(url);
     if (r) { refOf.set(uid, r); byRef.set(r, url); }
   }
-  for (const c of local.cards) c.image_ref = refOf.get(c.uid) || null;
+  // если картинки на этом устройстве нет (например, её не удалось скачать), ссылку из облака не затираем
+  const remoteCard = new Map((remote?.cards || []).map((c) => [c.uid, c]));
+  for (const c of local.cards) {
+    c.image_ref = refOf.get(c.uid) || null;
+    const rc = remoteCard.get(c.uid);
+    if (!c.image_ref && rc?.image_ref && (rc.updated || 0) >= (c.updated || 0)) c.image_ref = rc.image_ref;
+  }
 
   const merged = mergeSnapshots(local, remote);
 
-  // картинки: сначала скачиваем недостающие, затем выкладываем новые; при любой ошибке ничего не применяется
+  // картинки: сначала скачиваем недостающие, затем выкладываем новые.
+  // Если какой-то картинки в облаке нет, пропускаем её: текст, прогресс и остальные картинки всё равно синхронизируются.
   const want = [...new Set(merged.cards.map((c) => c.image_ref).filter((r) => r && !byRef.has(r)))];
-  await pool(want, 4, async (r) => { byRef.set(r, await downloadImage(cfg, r)); });
-  const remoteRefs = new Set((remote?.cards || []).map((c) => c.image_ref).filter(Boolean));
-  const fresh = [...new Set(merged.cards.map((c) => c.image_ref).filter((r) => r && !remoteRefs.has(r)))];
-  await pool(fresh, 3, async (r) => { await uploadImage(cfg, r, byRef.get(r)); });
+  let skipped = 0;
+  await pool(want, 4, async (r) => { const url = await downloadImage(cfg, r); if (url) byRef.set(r, url); else skipped++; });
+
+  // выкладываем картинки, которые есть на этом устройстве, но ещё не подтверждены в облаке
+  // (в том числе те, чью загрузку раньше прервало: в данных ссылка уже есть, а файла нет)
+  const uploaded = new Set(cfg.uploaded || []);
+  const fresh = [...new Set(refOf.values())].filter((r) => !uploaded.has(r));
+  await pool(fresh, 3, async (r) => { await uploadImage(cfg, r, byRef.get(r)); uploaded.add(r); });
 
   const stat = await bridge.apply(merged, byRef, known);
 
@@ -107,8 +121,8 @@ async function cycle({ force }) {
     await putFile(cfg.token, cfg.repo, DATA, utf8ToB64(body), { sha: file.sha, message: `Синхронизация ${new Date().toISOString().slice(0, 16)}` });
     etag = null; // при следующей проверке заберём свежую версию целиком
   }
-  setConfig({ etag, dirty: bridge.version !== v0 }); // если во время обмена что-то изменили, нужен ещё один проход
-  return { stat, pushed: !same };
+  setConfig({ etag, dirty: bridge.version !== v0, uploaded: [...uploaded].slice(-2000) }); // если во время обмена что-то изменили, нужен ещё один проход
+  return { stat, pushed: !same, skipped };
 }
 
 let running = false, again = false, timer = null;
@@ -133,7 +147,7 @@ export async function syncNow({ manual = false, force = false } = {}) {
     }
     const now = Date.now();
     setConfig({ lastSync: now });
-    setStatus({ state: 'idle', lastSync: now, error: null });
+    setStatus({ state: 'idle', lastSync: now, error: null, skipped: result?.skipped ?? status.skipped });
     const s = result?.stat;
     if (s && s.created + s.updated + s.deleted > 0) window.dispatchEvent(new CustomEvent('data-synced', { detail: s }));
   } catch (e) {
