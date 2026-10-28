@@ -128,7 +128,7 @@ function scoped(scope, id, block) {
 
 function newCard(topicId, term, definition, extra = {}) {
   return {
-    id: nextId('cards'), uid: newUid(), updated: Date.now(), pupdated: Date.now(), topic_id: topicId, block_id: null, term, definition, ipa: null, ipa_tried: 0, image: null, image_credit: null,
+    id: nextId('cards'), uid: newUid(), updated: Date.now(), pupdated: Date.now(), topic_id: topicId, block_id: null, image_side: 'definition', term, definition, ipa: null, ipa_tried: 0, image: null, image_credit: null,
     box: 1, learned: 0, next_review: localDate(), correct_count: 0, wrong_count: 0, created_at: nowIso(), ...extra,
   };
 }
@@ -211,7 +211,7 @@ function exportModuleData(m) {
       blocks: blocksOf(t.id).map((b) => ({ name: b.name })),
       cards: cardsOfTopic(t.id).map((c) => ({
         block: blockOf(c)?.name || null,
-        term: c.term, definition: c.definition, ipa: c.ipa, image: c.image, image_credit: c.image_credit, box: c.box, learned: c.learned,
+        term: c.term, definition: c.definition, ipa: c.ipa, image: c.image, image_credit: c.image_credit, image_side: c.image_side === 'term' ? 'term' : 'definition', box: c.box, learned: c.learned,
         next_review: c.next_review, correct_count: c.correct_count, wrong_count: c.wrong_count,
       })),
     })),
@@ -240,7 +240,7 @@ async function importTopicsInto(mod, topicsData, ops, { skipExisting = false } =
         try { image = await toJpegDataUrl(await (await fetch(image)).blob()); } catch { /* оставляем как есть */ }
       }
       const card = newCard(topic.id, term, definition, {
-        ipa, ipa_tried: ipa ? 1 : 0, image, image_credit: image && c.image_credit && typeof c.image_credit === 'object' ? { text: str(c.image_credit.text), url: str(c.image_credit.url), source: str(c.image_credit.source) } : null,
+        ipa, ipa_tried: ipa ? 1 : 0, image, image_side: c.image_side === 'term' ? 'term' : 'definition', image_credit: image && c.image_credit && typeof c.image_credit === 'object' ? { text: str(c.image_credit.text), url: str(c.image_credit.url), source: str(c.image_credit.source) } : null,
         box: Math.min(5, Math.max(1, num(c.box, 1))), learned: c.learned ? 1 : 0,
         next_review: /^\d{4}-\d{2}-\d{2}$/.test(c.next_review || '') ? c.next_review : localDate(),
         correct_count: num(c.correct_count, 0), wrong_count: num(c.wrong_count, 0),
@@ -416,6 +416,14 @@ export const api = wrapAll({
     await save([{ store: 'cards', put: c }]);
     return copy(c);
   },
+  /** Где показывать картинку при изучении: у определения ('definition', по умолчанию) или у термина ('term'). */
+  async setImageSide(id, side) {
+    const c = byId(C, id, 'Карточка');
+    if (!['term', 'definition'].includes(side)) fail('Картинку можно прикрепить к термину или к определению');
+    c.image_side = side;
+    await save([{ store: 'cards', put: c }]);
+    return copy(c);
+  },
   async delImage(id) {
     const c = byId(C, id, 'Карточка');
     c.image = null; c.image_credit = null;
@@ -463,7 +471,7 @@ export const api = wrapAll({
     if (filter === 'unlearned') list = list.filter((c) => !c.learned);
     const cards = list.map((c) => {
       const t = T.get(c.topic_id), m = M.get(t.module_id);
-      return { id: c.id, term: c.term, definition: c.definition, ipa: c.ipa, image: c.image, box: c.box, learned: c.learned, topic_id: c.topic_id, module_id: m.id, term_lang: m.term_lang, def_lang: m.def_lang };
+      return { id: c.id, term: c.term, definition: c.definition, ipa: c.ipa, image: c.image, image_side: c.image_side === 'term' ? 'term' : 'definition', box: c.box, learned: c.learned, topic_id: c.topic_id, module_id: m.id, term_lang: m.term_lang, def_lang: m.def_lang };
     });
     const mids = new Set(cards.map((c) => c.module_id));
     const pool = [...C.values()].map((c) => ({ id: c.id, module_id: T.get(c.topic_id).module_id, term: c.term, definition: c.definition })).filter((p) => mids.has(p.module_id));
@@ -656,7 +664,7 @@ export const bridge = {
       blocks: [...B.values()].filter((b) => tu(b.topic_id)).map((b) => ({ uid: b.uid, updated: b.updated, topic_uid: tu(b.topic_id), name: b.name, position: b.position, created_at: b.created_at })),
       cards: [...C.values()].filter((c) => tu(c.topic_id)).map((c) => ({
         uid: c.uid, updated: c.updated, pupdated: c.pupdated, topic_uid: tu(c.topic_id), block_uid: (c.block_id && B.get(c.block_id)?.uid) || null,
-        term: c.term, definition: c.definition, ipa: c.ipa ?? null, ipa_tried: c.ipa_tried || 0, image_credit: c.image_credit || null, created_at: c.created_at,
+        term: c.term, definition: c.definition, ipa: c.ipa ?? null, ipa_tried: c.ipa_tried || 0, image_credit: c.image_credit || null, image_side: c.image_side === 'term' ? 'term' : 'definition', created_at: c.created_at,
         box: c.box, learned: c.learned, next_review: c.next_review, correct_count: c.correct_count, wrong_count: c.wrong_count,
       })),
       reviews: R.filter((r) => C.get(r.card_id)).map((r) => [r.uid, C.get(r.card_id).uid, r.day, r.correct]),
@@ -721,7 +729,7 @@ export const bridge = {
       if (c.updated > l.updated) {
         Object.assign(l, {
           updated: c.updated, topic_id: top.id, block_id: (c.block_uid && Lb.get(c.block_uid)?.id) || null,
-          term: c.term, definition: c.definition, ipa: c.ipa ?? null, ipa_tried: c.ipa_tried || 0, image_credit: c.image_credit || null, created_at: c.created_at,
+          term: c.term, definition: c.definition, ipa: c.ipa ?? null, ipa_tried: c.ipa_tried || 0, image_credit: c.image_credit || null, image_side: c.image_side === 'term' ? 'term' : 'definition', created_at: c.created_at,
         });
         if (!c.image_ref) l.image = null; else if (images.has(c.image_ref)) l.image = images.get(c.image_ref);
         changed = true;

@@ -50,7 +50,19 @@ export async function renderTopic({ main, id }) {
       const promptIn = h('textarea', { rows: 3, class: 'mono', 'aria-label': 'Запрос для ИИ' });
       api.imagePrompt(card.id).then((r) => { promptIn.value = r.prompt; }).catch(() => {});
 
+      const sideBox = h('div', { class: 'stack tight' });
+      const drawSide = () => {
+        const side = cur.image_side === 'term' ? 'term' : 'definition';
+        const btn = (value, label) => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(side === value), onClick: () => { if (side !== value) run('Сохраняю…', () => api.setImageSide(card.id, value)); } }, label);
+        clear(sideBox).append(
+          h('span', { class: 'field-label' }, 'Где показывать картинку при изучении'),
+          h('div', { class: 'row gap wrap' }, btn('definition', 'У определения'), btn('term', 'У термина')),
+          h('p', { class: 'muted small' }, side === 'definition'
+            ? 'Картинка видна вместе с определением. Термин остаётся без подсказки, а после ответа картинка помогает запомнить.'
+            : 'Картинка видна вместе с термином и служит подсказкой к определению.'));
+      };
       const drawImg = () => {
+        drawSide();
         clear(imgBox).append(cur.image ? h('img', { src: cur.image, alt: `Картинка к «${cur.term}»` }) : h('p', { class: 'muted' }, 'Картинки пока нет'));
         const cr = cur.image_credit;
         clear(creditLine).append(...(cur.image && cr ? ['Фото: ', cr.text ? `${cr.text} · ` : '', cr.url ? h('a', { href: cr.url, target: '_blank', rel: 'noopener' }, cr.source || 'источник') : cr.source || ''] : []));
@@ -123,7 +135,7 @@ export async function renderTopic({ main, id }) {
 
       drawImg();
       return h('div', { class: 'stack' },
-        imgBox, creditLine,
+        imgBox, creditLine, sideBox,
         h('div', { class: 'row gap wrap' },
           h('button', { class: 'btn primary', onClick: () => run('Читаю буфер обмена…', async () => api.uploadImage(card.id, await readClipboardImage())) }, '📋 Вставить из буфера'),
           h('button', { class: 'btn', onClick: () => file.click() }, 'Загрузить файл'),

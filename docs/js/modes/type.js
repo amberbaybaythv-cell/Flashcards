@@ -1,5 +1,5 @@
 import { h, clear } from '../ui.js';
-import { sides, termBlock, defBlock, autoSpeak, onKeys } from '../lib/study-ui.js';
+import { sides, termBlock, defBlock, answerImage, autoSpeak, onKeys } from '../lib/study-ui.js';
 import { checkAnswer } from '../lib/fuzzy.js';
 
 /** Ввод ответа: допускается 1 опечатка, несколько вариантов через «/», «,», «;». */
@@ -23,7 +23,7 @@ export function runType(ctx) {
     const skipBtn = h('button', { class: 'btn', onClick: () => check(true) }, 'Не знаю');
     actions.append(checkBtn, skipBtn);
     clear(stage).append(
-      h('div', { class: 'question' }, s.qIsTerm ? termBlock(card) : defBlock(s.q)),
+      h('div', { class: 'question' }, s.qIsTerm ? termBlock(card) : defBlock(card, s.q)),
       h('div', { class: 'answer-row' }, input), feedback, actions);
     show.ctx = { card, s, input, feedback, actions };
     if (s.qIsTerm) autoSpeak(ctx, card);
@@ -50,6 +50,7 @@ export function runType(ctx) {
     paint();
     feedback.replaceWith(msg);
     if (!s.qIsTerm) { msg.after(h('div', { class: 'reveal' }, termBlock(card))); autoSpeak(ctx, card); }
+    else { const im = answerImage(card); if (im) msg.after(h('div', { class: 'reveal' }, im)); }
     clear(actions);
     if (verdict === 'wrong') {
       actions.append(h('button', { class: 'btn', onClick: () => { entry.correct = !entry.correct; paint(); overrule.textContent = entry.correct ? 'Я ошибся' : 'Я был прав'; } }, 'Я был прав'));

@@ -239,3 +239,6 @@ body.studying .sidebar, body.studying .menu-btn { display: none; } body.studying
 .qr-box { display: grid; place-items: center; padding: 14px; background: #fff; border-radius: 14px; width: fit-content; margin: 0 auto; }
 canvas.qr { width: min(300px, 70vw); height: auto; image-rendering: pixelated; display: block; }
 ol.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+
+/* Определение с картинкой */
+.def-block { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 100%; }

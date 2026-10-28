@@ -21,7 +21,7 @@ export function runCards(ctx) {
   const face = (card, which, dir) => {
     const s = sides(card, dir);
     const isTermFace = which === 'front' ? s.qIsTerm : !s.qIsTerm;
-    return isTermFace ? termBlock(card) : defBlock(which === 'front' ? s.q : s.a);
+    return isTermFace ? termBlock(card) : defBlock(card, which === 'front' ? s.q : s.a);
   };
 
   function show() {

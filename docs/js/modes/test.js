@@ -1,5 +1,5 @@
 import { h, clear, shuffle } from '../ui.js';
-import { sides, termBlock, defBlock, autoSpeak, onKeys } from '../lib/study-ui.js';
+import { sides, termBlock, defBlock, answerImage, autoSpeak, onKeys } from '../lib/study-ui.js';
 import { normalize } from '../lib/fuzzy.js';
 
 /** Тест с 4 вариантами; неверные варианты берутся из других карточек модуля. */
@@ -36,7 +36,7 @@ export function runTest(ctx) {
     const buttons = opts.map((t, k) => h('button', { class: 'option', onClick: () => choose(k) },
       h('kbd', null, k + 1), h('span', null, t)));
     clear(stage).append(
-      h('div', { class: 'question' }, s.qIsTerm ? termBlock(card) : defBlock(s.q)),
+      h('div', { class: 'question' }, s.qIsTerm ? termBlock(card) : defBlock(card, s.q)),
       h('p', { class: 'muted center small' }, s.qIsTerm ? 'Выберите определение' : 'Выберите термин'),
       h('div', { class: 'options' }, buttons), feedback, h('div', { class: 'row center-row' }, nextBtn));
     show.ctx = { card, s, buttons, feedback, nextBtn };
@@ -58,6 +58,7 @@ export function runTest(ctx) {
     feedback.textContent = ok ? 'Верно!' : 'Неверно. Правильный ответ подсвечен.';
     feedback.className = 'feedback ' + (ok ? 'ok' : 'bad');
     if (!s.qIsTerm) { feedback.after(h('div', { class: 'reveal' }, termBlock(card))); autoSpeak(ctx, card); }
+    else { const im = answerImage(card); if (im) feedback.after(h('div', { class: 'reveal' }, im)); } // вопрос был по термину: показываем картинку к верному определению
     ctx.setProgress(i + 1, total, `${i + 1} из ${total}`);
     nextBtn.hidden = false;
     if (ok && s.qIsTerm) timer = setTimeout(next, 900);

@@ -1,3 +1,10 @@
+// Нативные append/prepend/replaceChildren превращают null в текст «null». Пропускаем пустые значения,
+// чтобы условные блоки вида `условие ? элемент : null` безопасно передавались в любой из этих методов.
+for (const name of ['append', 'prepend', 'replaceChildren', 'before', 'after']) {
+  const native = Element.prototype[name];
+  Element.prototype[name] = function (...nodes) { return native.apply(this, nodes.filter((n) => n != null && n !== false)); };
+}
+
 export function h(tag, props, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props || {})) {

@@ -14,15 +14,26 @@ export function speakBtn(card) {
     onClick: (e) => { e.stopPropagation(); speak(card.term, card.term_lang); } }, '🔊');
 }
 
-/** Сторона с термином: слово, транскрипция, озвучка, картинка. */
+/** К какой стороне прикреплена картинка: 'definition' (по умолчанию) или 'term'. */
+export const imageSide = (card) => (card.image_side === 'term' ? 'term' : 'definition');
+
+const picture = (card) => (card.image ? h('img', { class: 'assoc', src: card.image, alt: `Картинка-ассоциация к «${card.term}»` }) : null);
+
+/** Картинка карточки, если она прикреплена к определению: показывается как «ответ» после проверки, когда вопрос был по термину. */
+export const answerImage = (card) => (imageSide(card) === 'definition' ? picture(card) : null);
+
+/** Сторона с термином: слово, транскрипция, озвучка; картинка только если она прикреплена к термину. */
 export function termBlock(card) {
   return h('div', { class: 'term-block' },
     h('div', { class: 'term-line' }, h('span', { class: 'term-text' }, card.term), speakBtn(card)),
     card.ipa ? h('div', { class: 'ipa big' }, card.ipa) : null,
-    card.image ? h('img', { class: 'assoc', src: card.image, alt: `Картинка-ассоциация к «${card.term}»` }) : null);
+    imageSide(card) === 'term' ? picture(card) : null);
 }
 
-export const defBlock = (text) => h('div', { class: 'def-text' }, text);
+/** Сторона с определением; картинка показывается здесь, если она прикреплена к определению. */
+export const defBlock = (card, text) => h('div', { class: 'def-block' },
+  h('div', { class: 'def-text' }, text),
+  imageSide(card) === 'definition' ? picture(card) : null);
 
 /** Автоозвучка термина, если включена. */
 export function autoSpeak(ctx, card) {
