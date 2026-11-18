@@ -52,7 +52,9 @@ export async function render(opts = {}) {
   const keepScroll = !!opts && opts.keepScroll === true; // аргументом может прийти событие hashchange
   const { parts, query } = parseHash();
   if (cleanup) { try { cleanup(); } catch { /* ignore */ } cleanup = null; }
-  const main = clear($('#main'));
+  // каждая перерисовка пишет в свой контейнер: если её опередит новая, старая пишет в отсоединённый элемент и ничего не задваивает
+  const main = h('div', { class: 'view' });
+  clear($('#main')).append(main);
   document.body.classList.remove('menu-open');
   document.body.classList.toggle('studying', parts[0] === 'study');
   try {
@@ -93,7 +95,6 @@ export function openModuleForm(m) {
         close();
         await refreshTree();
         go(`#/m/${saved.id}`);
-        if (m) render();
       } catch (err) { toast(err.message, 'error'); }
     } },
       field('Название', name), field('Описание', desc),
@@ -133,8 +134,7 @@ export function openTopicForm(moduleId, t) {
         close();
         expanded.add(moduleId); saveExpanded();
         await refreshTree();
-        go(`#/t/${saved.id}`);
-        if (t) render();
+        go(`#/t/${saved.id}`); // при том же адресе go() сам перерисует страницу
       } catch (err) { toast(err.message, 'error'); }
     } }, field('Название темы', name),
     h('div', { class: 'row end gap' }, h('button', { type: 'button', class: 'btn', onClick: close }, 'Отмена'), h('button', { class: 'btn primary', type: 'submit' }, 'Сохранить')));

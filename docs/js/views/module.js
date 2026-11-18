@@ -16,9 +16,9 @@ export async function renderModule({ main, id }) {
         h('p', { class: 'muted' }, `${LANG[m.term_lang]} → ${LANG[m.def_lang]} · ${m.topics.length} тем · ${cardsWord(m.total)}`),
         m.description ? h('p', null, m.description) : null),
       h('div', { class: 'row gap wrap' },
-        h('button', { class: 'btn primary', disabled: !m.total, onClick: () => openStudyLauncher({ scope: 'module', id: m.id, title: m.name }) },
+        h('button', { class: 'btn primary study-btn', disabled: !m.total, onClick: () => openStudyLauncher({ scope: 'module', id: m.id, title: m.name }) },
           m.due ? `Учить модуль · ${m.due} к повторению` : 'Учить модуль'),
-        h('button', { class: 'btn emoji-btn', 'aria-label': 'Настройки модуля', title: 'Настройки модуля: темы, экспорт, удаление', onClick: () => openModuleForm(m) }, h('span', { class: 'emoji' }, '⚙️')))));
+        h('button', { class: 'btn emoji-btn tall', 'aria-label': 'Настройки модуля', title: 'Настройки модуля: темы, экспорт, удаление', onClick: () => openModuleForm(m) }, h('span', { class: 'emoji' }, '⚙️')))));
 
   if (!m.topics.length) {
     main.append(h('div', { class: 'empty' }, h('h2', null, 'В модуле пока нет тем'),

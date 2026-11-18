@@ -242,3 +242,35 @@ ol.steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column;
 
 /* Определение с картинкой */
 .def-block { display: flex; flex-direction: column; align-items: center; gap: 14px; max-width: 100%; }
+
+/* Крупная кнопка «Учить» и ⚙️ рядом */
+.btn.study-btn { padding: 13px 34px; font-size: 18px; font-weight: 650; border-radius: 14px; min-height: 52px; }
+.btn.emoji-btn.tall { min-height: 52px; min-width: 52px; border-radius: 14px; }
+.btn.emoji-btn.tall .emoji { font-size: 22px; }
+.head-actions { flex-wrap: nowrap; align-items: stretch; }
+
+/* Выбор карточек долгим нажатием */
+.cards-table tbody tr { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+.selmark { display: none; }
+.cards-table.selecting .selmark { display: inline-grid; place-items: center; width: 22px; height: 22px; margin-right: 8px; vertical-align: -5px; border-radius: 50%; border: 2px solid var(--border); background: var(--surface); }
+.cards-table.selecting tr.sel .selmark { background: var(--accent); border-color: var(--accent); }
+.cards-table.selecting tr.sel .selmark::after { content: '✓'; color: #fff; font-size: 13px; font-weight: 700; line-height: 1; }
+.cards-table.selecting tbody tr { cursor: pointer; }
+.cards-table.selecting .c-act > * { opacity: .25; } /* нажатия по кнопкам перехватывает строка: в режиме выбора они только отмечают карточку */
+.bulk-bar.floating { position: fixed; left: 50%; bottom: 16px; top: auto; transform: translateX(-50%); z-index: 60; width: max-content; max-width: calc(100vw - 24px); justify-content: center; }
+body:not(.studying) .bulk-bar.floating { margin-left: calc(var(--sidebar-w) / 2); }
+@media (max-width: 860px) { body:not(.studying) .bulk-bar.floating { margin-left: 0; } }
+
+/* Даты под столбцами «Активность за 30 дней» */
+.act-col { flex-direction: column; justify-content: flex-end; align-items: center; min-width: 0; }
+.act-n { font-size: 10px; line-height: 1; margin-bottom: 2px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.act-days { display: flex; gap: 3px; margin-top: 4px; }
+.act-day { flex: 1; min-width: 0; text-align: center; font-size: 10px; line-height: 1.15; color: var(--muted); font-variant-numeric: tabular-nums; }
+.act-day small { display: block; font-size: 9px; color: var(--primary-text); }
+.act-day.today span { font-weight: 700; color: var(--text); }
+@media (max-width: 520px) {
+  .activity, .act-days { gap: 2px; }
+  .act-day span { display: inline-block; writing-mode: vertical-rl; transform: rotate(180deg); font-size: 9px; }
+  .act-day small { writing-mode: vertical-rl; transform: rotate(180deg); margin: 2px auto 0; }
+}
+.activity { margin-bottom: 0; }

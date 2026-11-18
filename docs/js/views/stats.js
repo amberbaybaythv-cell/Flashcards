@@ -1,5 +1,8 @@
 import { h, fold } from '../ui.js';
 
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const dayLabel = (day) => `${Number(day.slice(8, 10))} ${MONTHS[Number(day.slice(5, 7)) - 1]}`;
+
 const BOX_NAMES = ['Коробка 1', 'Коробка 2', 'Коробка 3', 'Коробка 4', 'Коробка 5'];
 const INTERVAL_HINT = ['каждый день', 'раз в 2 дня', 'раз в 4 дня', 'раз в 8 дней', 'раз в 16 дней'];
 
@@ -22,8 +25,16 @@ export function statsBlock({ totals, boxes, activity, hardest, blocks }, { onBlo
         { key: 'boxes', open: true, cls: 'panel' }),
       fold('Активность за 30 дней',
         [h('div', { class: 'activity', role: 'img', 'aria-label': 'Количество ответов по дням за последние 30 дней' },
-          activity.map((a) => h('div', { class: 'act-col', title: `${a.day}: ${a.n} ответов, верных ${a.ok}` },
-            h('div', { class: 'act-bar', style: `height:${a.n ? Math.max(6, (a.n / maxAct) * 100) : 2}%` })))),
+          activity.map((a) => h('div', { class: 'act-col', title: `${dayLabel(a.day)}: ${a.n} ответов, верных ${a.ok}` },
+            a.n ? h('span', { class: 'act-n' }, a.n) : null,
+            h('div', { class: 'act-bar', style: `height:${a.n ? Math.max(6, (a.n / maxAct) * 82) : 2}%` })))),
+        // подписи дат: число под каждым столбцом, название месяца — у первого столбца и у каждого 1-го числа
+        h('div', { class: 'act-days', 'aria-hidden': 'true' },
+          activity.map((a, i) => {
+            const d = Number(a.day.slice(8, 10));
+            const mon = i === 0 || d === 1 ? MONTHS[Number(a.day.slice(5, 7)) - 1] : '';
+            return h('div', { class: 'act-day' + (i === activity.length - 1 ? ' today' : '') }, h('span', null, d), mon ? h('small', null, mon) : null);
+          })),
         h('p', { class: 'muted small' }, `Всего ответов: ${activity.reduce((s, a) => s + a.n, 0)}`)],
         { key: 'activity', open: true, cls: 'panel' })),
     fold('Самые трудные карточки',

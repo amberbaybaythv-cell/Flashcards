@@ -15,7 +15,7 @@ export async function renderTopic({ main, id }) {
   let cards = await api.cards(id);
   let info = await api.blocks(id); // блоки темы со статистикой; управлять ими можно только здесь, на странице открытой темы
   let blockFilter = String(store.get(`blockFilter:${id}`, 'all')); // 'all' | 'none' | id блока
-  const selected = new Set(); // выделенные галочками карточки
+  const selected = new Set(); // выбранные карточки (режим выбора включается долгим нажатием)
   const bulkHolder = h('div');
   const head = h('div'), body = h('div'), statsHolder = h('div');
   main.append(head, body, statsHolder);
@@ -165,7 +165,7 @@ export async function renderTopic({ main, id }) {
   function setFilter(f) {
     blockFilter = String(f);
     store.set(`blockFilter:${id}`, blockFilter);
-    selected.clear();
+    selected.clear(); selecting = false;
     draw();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -228,44 +228,99 @@ export async function renderTopic({ main, id }) {
         } }, 'Удалить блок')) : null);
   }
 
-  /** Панель действий над выделенными карточками. */
+  /* ---------- выбор нескольких карточек: долгое нажатие включает режим, дальше обычные нажатия ---------- */
+  let selecting = false;
+  let tableEl = null, lastShown = [];
+
+  function setSelecting(on) {
+    selecting = on;
+    if (!on) selected.clear();
+    tableEl?.classList.toggle('selecting', selecting);
+    tableEl?.querySelectorAll('tbody tr').forEach((tr) => tr.classList.toggle('sel', selected.has(Number(tr.dataset.id))));
+    updateBulk();
+  }
+
+  function toggleCard(cid) {
+    if (selected.has(cid)) selected.delete(cid); else selected.add(cid);
+    if (!selected.size) { setSelecting(false); return; }
+    tableEl?.querySelector(`tbody tr[data-id="${cid}"]`)?.classList.toggle('sel', selected.has(cid));
+    updateBulk();
+  }
+
+  const onEsc = (e) => { if (e.key === 'Escape' && selecting && !document.querySelector('#modals .backdrop')) setSelecting(false); };
+  document.addEventListener('keydown', onEsc);
+
+  /** Панель действий над выбранными карточками (появляется в режиме выбора). */
   function updateBulk() {
     clear(bulkHolder);
-    if (!selected.size) return;
+    if (!selecting || !selected.size) return;
     const target = h('select', { 'aria-label': 'Куда переместить' },
       h('option', { value: '' }, 'Без блока'),
       info.blocks.map((b) => h('option', { value: String(b.id) }, b.name)),
       h('option', { value: '__new' }, '+ Новый блок…'));
-    bulkHolder.append(h('div', { class: 'bulk-bar' },
+    bulkHolder.append(h('div', { class: 'bulk-bar floating', role: 'toolbar', 'aria-label': 'Действия с выбранными карточками' },
       h('b', null, `Выбрано: ${selected.size}`),
-      h('span', { class: 'muted small' }, 'Переместить в:'), target,
+      selected.size < lastShown.length ? h('button', { class: 'btn small', onClick: () => { lastShown.forEach((c) => selected.add(c.id)); setSelecting(true); } }, 'Выбрать все') : null,
+      h('span', { class: 'muted small' }, 'В блок:'), target,
       h('button', { class: 'btn small primary', onClick: async () => {
         let to = target.value;
         if (to === '__new') { const b = await newBlock(); if (!b) return; to = String(b.id); }
         try {
           const r = await api.moveCards([...selected], to ? Number(to) : null);
           toast(`Перенесено карточек: ${r.moved}`, 'success');
-          selected.clear();
+          selecting = false; selected.clear();
           await reload();
         } catch (e) { toast(e.message, 'error'); }
       } }, 'Переместить'),
-      h('button', { class: 'btn small', onClick: () => { selected.clear(); draw(); } }, 'Снять выделение')));
+      h('button', { class: 'btn small danger-ghost', onClick: async () => {
+        if (!(await confirmDialog(`Удалить выбранные карточки (${selected.size})? Это нельзя отменить.`))) return;
+        try {
+          const r = await api.delCards([...selected]);
+          toast(`Удалено карточек: ${r.deleted}`, 'success');
+          selecting = false; selected.clear();
+          await reload();
+        } catch (e) { toast(e.message, 'error'); }
+      } }, 'Удалить'),
+      h('button', { class: 'btn small', onClick: () => setSelecting(false) }, 'Готово')));
   }
 
-  function rowFor(c, syncAll) {
-    const tr = h('tr', { class: selected.has(c.id) ? 'sel' : '' });
-    const chk = h('input', { type: 'checkbox', checked: selected.has(c.id), 'aria-label': `Выбрать «${c.term}»`, onChange: () => {
-      if (chk.checked) selected.add(c.id); else selected.delete(c.id);
-      tr.classList.toggle('sel', chk.checked);
-      updateBulk(); syncAll();
-    } });
+  function rowFor(c) {
+    const tr = h('tr', { class: selected.has(c.id) ? 'sel' : '', 'data-id': String(c.id) });
+    let editing = false, timer = null, sx = 0, sy = 0, longFired = false;
+    const cancel = () => { clearTimeout(timer); timer = null; };
+    const startSelection = () => {
+      if (selecting || editing) return;
+      longFired = true;
+      navigator.vibrate?.(15);
+      selected.clear(); selected.add(c.id);
+      setSelecting(true);
+    };
+    // долгое нажатие (палец или мышь) включает режим выбора
+    tr.addEventListener('pointerdown', (e) => {
+      if (selecting || editing || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      if (e.target.closest('button, input, textarea, select, a')) return;
+      sx = e.clientX; sy = e.clientY; longFired = false;
+      cancel();
+      timer = setTimeout(() => { timer = null; startSelection(); }, 450);
+    });
+    tr.addEventListener('pointermove', (e) => { if (timer && Math.hypot(e.clientX - sx, e.clientY - sy) > 10) cancel(); }); // это прокрутка, а не нажатие
+    for (const t of ['pointerup', 'pointercancel', 'pointerleave']) tr.addEventListener(t, cancel);
+    tr.addEventListener('contextmenu', (e) => { if (editing) return; e.preventDefault(); cancel(); startSelection(); }); // правая кнопка мыши / системное долгое нажатие
+    // в режиме выбора обычное нажатие добавляет или убирает карточку (кнопки строки при этом не срабатывают)
+    tr.addEventListener('click', (e) => {
+      if (longFired) { longFired = false; e.preventDefault(); e.stopPropagation(); return; }
+      if (!selecting || editing) return;
+      e.preventDefault(); e.stopPropagation();
+      toggleCard(c.id);
+    }, true);
+
     const tag = blockFilter === 'all' && blockName(c) ? h('div', null, h('span', { class: 'blk-tag' }, blockName(c))) : null;
     const view = () => {
+      editing = false;
       clear(tr).append(
-        h('td', { class: 'c-chk' }, chk),
-        h('td', { class: 'c-term' }, h('b', null, c.term), c.ipa ? h('div', { class: 'ipa' }, c.ipa) : null, tag),
+        h('td', { class: 'c-term' }, h('span', { class: 'selmark', 'aria-hidden': 'true' }), h('b', null, c.term), c.ipa ? h('div', { class: 'ipa' }, c.ipa) : null, tag),
         h('td', { class: 'c-def' }, c.definition),
-        h('td', { class: 'c-img' }, c.image ? h('img', { class: 'thumb', src: c.image, alt: '', loading: 'lazy' }) : null),
+        h('td', { class: 'c-img' }, c.image ? h('img', { class: 'thumb', src: c.image, alt: '', loading: 'lazy', draggable: 'false' }) : null),
         h('td', null, h('span', { class: `box ${BOX_COLORS[c.box - 1]}`, title: c.learned ? 'Выучена' : `Коробка ${c.box}` }, c.learned ? '✓' : c.box)),
         h('td', { class: 'c-act' },
           speechSupported ? h('button', { class: 'icon-btn', 'aria-label': 'Озвучить', title: 'Озвучить', onClick: () => speak(c.term, lang) }, '🔊') : null,
@@ -277,6 +332,7 @@ export async function renderTopic({ main, id }) {
           } }, '🗑')));
     };
     const edit = () => {
+      editing = true;
       const t = h('input', { type: 'text', value: c.term, 'aria-label': 'Термин' });
       const d = h('textarea', { rows: 2, 'aria-label': 'Определение' }, c.definition);
       const save = async () => {
@@ -285,7 +341,7 @@ export async function renderTopic({ main, id }) {
       };
       const onKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); save(); } if (e.key === 'Escape') view(); };
       t.addEventListener('keydown', onKey); d.addEventListener('keydown', onKey);
-      clear(tr).append(h('td', { class: 'c-chk' }, chk), h('td', null, t), h('td', { colspan: 2 }, d), h('td'),
+      clear(tr).append(h('td', null, t), h('td', { colspan: 2 }, d), h('td'),
         h('td', { class: 'c-act' }, h('button', { class: 'btn primary small', onClick: save }, 'OK'), h('button', { class: 'btn small', onClick: view }, '✕')));
       t.focus();
     };
@@ -293,32 +349,63 @@ export async function renderTopic({ main, id }) {
     return tr;
   }
 
+  /* ---------- окно «Новая карточка»: можно добавлять подряд, не закрывая ---------- */
+  function addCardDialog() {
+    let count = 0;
+    modal('Новая карточка', (close) => {
+      const term = h('input', { type: 'text', placeholder: 'Термин', 'aria-label': 'Термин', required: true });
+      const def = h('textarea', { rows: 3, placeholder: 'Определение', 'aria-label': 'Определение', required: true });
+      const blockSel = info.blocks.length ? h('select', { 'aria-label': 'Блок' },
+        h('option', { value: '' }, 'Без блока'),
+        info.blocks.map((b) => h('option', { value: String(b.id), selected: b.id === filterBlockId() }, b.name))) : null;
+      const done = h('p', { class: 'muted small', 'aria-live': 'polite' });
+      const submit = async (e) => {
+        e?.preventDefault();
+        if (!term.value.trim() || !def.value.trim()) { toast('Заполните термин и определение', 'error'); return; }
+        try {
+          await api.addCard(id, { term: term.value, definition: def.value, block_id: blockSel?.value ? Number(blockSel.value) : null });
+          count++;
+          done.textContent = `Добавлено: ${count}. Можно вводить следующую.`;
+          term.value = ''; def.value = ''; term.focus();
+        } catch (err) { toast(err.message, 'error'); }
+      };
+      def.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) submit(e); });
+      return h('form', { class: 'stack', onSubmit: submit },
+        field('Термин', term), field('Определение', def, 'Enter — добавить, Shift+Enter — новая строка'),
+        blockSel ? field('Блок', blockSel) : null,
+        done,
+        h('div', { class: 'row end gap' }, h('button', { type: 'button', class: 'btn', onClick: close }, 'Готово'), h('button', { type: 'submit', class: 'btn primary' }, 'Добавить')));
+    }, { onClose: () => { if (count) reload(); } });
+  }
+
+  /* ---------- ⚙️ темы: редкие действия ---------- */
+  function topicSettings() {
+    modal('Настройки темы', (close) => h('div', { class: 'stack' },
+      h('p', { class: 'muted small' }, `${topic.name} · ${cardsWord(cards.length)}`),
+      h('div', { class: 'stack tight' },
+        h('button', { class: 'btn', onClick: () => { close(); openBulkImport(topic, reload, { blockId: filterBlockId() }); } }, 'Импорт текстом'),
+        h('button', { class: 'btn', onClick: () => { close(); openTopicForm(topic.module_id, topic); } }, 'Переименовать'),
+        h('button', { class: 'btn', disabled: !cards.length, onClick: () => api.downloadTopic(id) }, 'Экспорт текст'),
+        h('button', { class: 'btn danger-ghost', onClick: async () => {
+          if (!(await confirmDialog(`Удалить тему «${topic.name}», ${cardsWord(cards.length)}${info.blocks.length ? ` и блоки (${info.blocks.length})` : ''}? Это нельзя отменить.`))) return;
+          try { await api.delTopic(id); close(); await refreshTree(); toast('Тема удалена'); go(`#/m/${topic.module_id}`); } catch (e) { toast(e.message, 'error'); }
+        } }, 'Удалить тему'))));
+  }
+
   function draw() {
     const missingIpa = lang === 'en' ? cards.filter((c) => !c.ipa && !c.ipa_tried).length : 0;
     const missingImg = cards.filter((c) => !c.image).length;
     const due = cards.filter((c) => c.next_review <= state.tree.today).length;
     const shown = visible();
+    lastShown = shown;
+    if (selecting && !selected.size) selecting = false;
     clear(head).append(h('header', { class: 'page-head' },
       h('div', null,
         h('p', { class: 'crumbs small' }, h('a', { href: `#/m/${topic.module.id}` }, topic.module.name), ' ›'),
         h('h1', null, topic.name), h('p', { class: 'muted' }, cardsWord(cards.length) + (info.blocks.length ? ` · блоков: ${info.blocks.length}` : '') + (due ? ` · ${due} к повторению` : ''))),
-      h('div', { class: 'row gap wrap' },
-        h('button', { class: 'btn primary', disabled: !cards.length, onClick: () => openStudyLauncher({ scope: 'topic', id, title: topic.name, block: blockFilter }) }, 'Учить'),
-        h('button', { class: 'btn', onClick: () => openBulkImport(topic, reload, { blockId: filterBlockId() }) }, 'Импорт текстом'),
-        h('button', { class: 'btn', onClick: () => openTopicForm(topic.module_id, topic) }, 'Переименовать'),
-        h('button', { class: 'btn', disabled: !cards.length, onClick: () => api.downloadTopic(id) }, 'Экспорт текст'),
-        h('button', { class: 'btn danger-ghost', onClick: async () => {
-          if (!(await confirmDialog(`Удалить тему «${topic.name}», ${cardsWord(cards.length)}${info.blocks.length ? ` и блоки (${info.blocks.length})` : ''}? Это нельзя отменить.`))) return;
-          try { await api.delTopic(id); await refreshTree(); toast('Тема удалена'); go(`#/m/${topic.module_id}`); } catch (e) { toast(e.message, 'error'); }
-        } }, 'Удалить'))));
-
-    const term = h('input', { type: 'text', placeholder: 'Термин', 'aria-label': 'Новый термин', required: true });
-    const def = h('input', { type: 'text', placeholder: activeBlock() ? `Определение (добавится в «${activeBlock().name}»)` : 'Определение', 'aria-label': 'Новое определение', required: true });
-    const addForm = h('form', { class: 'addrow', onSubmit: async (e) => {
-      e.preventDefault();
-      try { await api.addCard(id, { term: term.value, definition: def.value, block_id: filterBlockId() }); await reload(); const t = body.querySelector('input[aria-label="Новый термин"]'); t?.focus(); }
-      catch (err) { toast(err.message, 'error'); }
-    } }, term, def, h('button', { class: 'btn primary', type: 'submit' }, 'Добавить'));
+      h('div', { class: 'row gap head-actions' },
+        h('button', { class: 'btn primary study-btn', disabled: !cards.length, onClick: () => openStudyLauncher({ scope: 'topic', id, title: topic.name, block: blockFilter }) }, 'Учить'),
+        h('button', { class: 'btn emoji-btn tall', 'aria-label': 'Настройки темы', title: 'Импорт текстом, переименование, экспорт, удаление', onClick: topicSettings }, h('span', { class: 'emoji' }, '⚙️')))));
 
     const enrich = (opts, label) => async () => {
       try {
@@ -328,36 +415,33 @@ export async function renderTopic({ main, id }) {
       } catch (e) { toast(e.message, 'error'); }
     };
 
-    // «выбрать все» в шапке таблицы
-    const allChk = h('input', { type: 'checkbox', 'aria-label': 'Выбрать все показанные карточки', onChange: () => {
-      if (allChk.checked) shown.forEach((c) => selected.add(c.id)); else shown.forEach((c) => selected.delete(c.id));
-      draw();
-    } });
-    const syncAll = () => { allChk.checked = shown.length > 0 && shown.every((c) => selected.has(c.id)); allChk.indeterminate = !allChk.checked && shown.some((c) => selected.has(c.id)); };
-
     const emptyHint = !cards.length
-      ? h('div', { class: 'empty' }, h('h2', null, 'В теме пока нет карточек'), h('p', { class: 'muted' }, 'Добавьте карточку выше или вставьте сразу весь список текстом.'),
-          h('button', { class: 'btn primary', onClick: () => openBulkImport(topic, reload, { blockId: filterBlockId() }) }, 'Импорт текстом'))
+      ? h('div', { class: 'empty' }, h('h2', null, 'В теме пока нет карточек'), h('p', { class: 'muted' }, 'Добавьте карточку или вставьте сразу весь список текстом.'),
+          h('div', { class: 'row gap center-row wrap' },
+            h('button', { class: 'btn primary', onClick: addCardDialog }, '+ Добавить карточку'),
+            h('button', { class: 'btn', onClick: () => openBulkImport(topic, reload, { blockId: filterBlockId() }) }, 'Импорт текстом')))
       : h('div', { class: 'empty' }, h('h2', null, blockFilter === 'none' ? 'Нет карточек без блока' : 'В этом блоке пока нет карточек'),
-          h('p', { class: 'muted' }, 'Выделите карточки галочками на вкладке «Все» и перенесите их сюда, либо добавьте новую карточку выше.'),
-          h('button', { class: 'btn', onClick: () => setFilter('all') }, 'Показать все карточки'));
+          h('p', { class: 'muted' }, 'На вкладке «Все» зажмите карточку, отметьте нужные и перенесите их сюда, либо добавьте новую.'),
+          h('div', { class: 'row gap center-row wrap' },
+            h('button', { class: 'btn primary', onClick: addCardDialog }, '+ Добавить'),
+            h('button', { class: 'btn', onClick: () => setFilter('all') }, 'Показать все карточки')));
+
+    tableEl = shown.length ? h('table', { class: 'cards-table' + (selecting ? ' selecting' : '') },
+      h('thead', null, h('tr', null, h('th', null, 'Термин'), h('th', null, 'Определение'), h('th', null), h('th', { title: 'Коробка Лейтнера' }, 'Кор.'), h('th', null))),
+      h('tbody', null, shown.map((c) => rowFor(c)))) : null;
 
     clear(body).append(
       blocksBar(),
       bulkHolder,
-      addForm,
-      cards.length ? h('div', { class: 'row gap wrap small toolbar' },
+      cards.length ? h('div', { class: 'row gap wrap toolbar' },
+        h('button', { class: 'btn primary', onClick: addCardDialog }, '+ Добавить'),
         lang === 'en' ? h('button', { class: 'btn small', disabled: !missingIpa, onClick: enrich({ ipa: true }, 'Транскрипции') }, `Подтянуть транскрипции${missingIpa ? ` (${missingIpa})` : ''}`) : null,
-        h('button', { class: 'btn small', disabled: !missingImg, onClick: enrich({ stock: true }, 'Фото') }, `Найти фото (Wikimedia)${missingImg ? ` (${missingImg})` : ''}`),
-        h('button', { class: 'btn small', disabled: !missingImg, onClick: enrich({ images: true }, 'Картинки') }, `Сгенерировать картинки${missingImg ? ` (${missingImg})` : ''}`),
-        state.config.imageConfigured === false ? h('span', { class: 'badge warn' }, h('a', { href: '#/settings' }, 'Для картинок нужен ключ: откройте «Настройки»')) : null) : null,
-      shown.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'cards-table' },
-        h('thead', null, h('tr', null, h('th', { class: 'c-chk' }, allChk), h('th', null, 'Термин'), h('th', null, 'Определение'), h('th', null), h('th', { title: 'Коробка Лейтнера' }, 'Кор.'), h('th', null))),
-        h('tbody', null, shown.map((c) => rowFor(c, syncAll))))) : emptyHint);
-    updateBulk(); syncAll();
+        h('button', { class: 'btn small', disabled: !missingImg, onClick: enrich({ stock: true }, 'Фото') }, `Найти фото (Wikimedia)${missingImg ? ` (${missingImg})` : ''}`)) : null,
+      tableEl ? h('div', { class: 'table-wrap' }, tableEl) : emptyHint);
+    updateBulk();
     drawStats();
   }
 
   draw();
-  return () => window.removeEventListener('cards-changed', onChanged);
+  return () => { window.removeEventListener('cards-changed', onChanged); document.removeEventListener('keydown', onEsc); };
 }

@@ -383,6 +383,14 @@ export const api = wrapAll({
     await save([{ store: 'cards', put: c }]);
     return copy(c);
   },
+  /** Удаляет несколько карточек одной записью. */
+  async delCards(idsList) {
+    const list = (Array.isArray(idsList) ? idsList : []).map((x) => C.get(Number(x))).filter(Boolean);
+    const ops = [];
+    removeCards(list, ops);
+    await save(ops);
+    return { deleted: list.length };
+  },
   async delCard(id) {
     const c = byId(C, id, 'Карточка'), ops = [];
     removeCards([c], ops);
