@@ -274,3 +274,15 @@ body:not(.studying) .bulk-bar.floating { margin-left: calc(var(--sidebar-w) / 2)
   .act-day small { writing-mode: vertical-rl; transform: rotate(180deg); margin: 2px auto 0; }
 }
 .activity { margin-bottom: 0; }
+
+/* «⚙️ Редактировать блок» — раскрывается по нажатию */
+details.block-edit { margin: -4px 0 12px; }
+details.block-edit > summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 550; cursor: pointer; user-select: none; }
+details.block-edit > summary::-webkit-details-marker { display: none; }
+details.block-edit > summary:hover { border-color: var(--accent); }
+details.block-edit > summary .emoji { font-size: 16px; }
+details.block-edit > summary::after { content: ''; width: 7px; height: 7px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; margin-left: 2px; }
+details.block-edit[open] > summary::after { transform: rotate(45deg); }
+.block-edit-body { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.block-edit-body p { margin-bottom: 8px; }
+details.block-edit > summary, details.fold > summary, .chip { -webkit-tap-highlight-color: transparent; }

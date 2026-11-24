@@ -191,6 +191,7 @@ export async function renderTopic({ main, id }) {
   function blocksBar() {
     if (!cards.length && !info.blocks.length) return null;
     const chip = (key, label, n) => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(blockFilter === key), onClick: () => setFilter(key) }, label, h('span', { class: 'n' }, n));
+    const b = activeBlock();
     // стрелка рядом с «Все» сворачивает всю строку блоков; выбор запоминается (общий для всех тем)
     const open = store.get('blocksBarOpen', true);
     const toggle = h('button', {
@@ -208,24 +209,26 @@ export async function renderTopic({ main, id }) {
       if (cards.length >= 2) chips.push(h('button', { class: 'chip add', type: 'button', title: 'Разложить карточки без блока по группам одинакового размера', onClick: splitIntoBlocks }, 'Разделить на блоки…'));
     } else if (blockFilter === 'none') {
       chips.push(chip('none', 'Без блока', info.none.total)); // чтобы было видно, что показан не весь список
+    } else if (b) {
+      chips.push(chip(String(b.id), b.name, b.total)); // строка свёрнута, но видно, какой блок открыт
     }
-    const b = activeBlock();
     return h('div', null,
       h('div', { class: 'blocks-bar', role: 'group', 'aria-label': 'Блоки темы' }, chips),
-      b ? h('div', { class: 'block-actions' },
-        h('b', null, `Блок «${b.name}»`),
-        h('span', { class: 'small muted' }, `${b.total} карт. · выучено ${b.total ? Math.round((b.learned / b.total) * 100) : 0}% · к повторению ${b.due}`),
-        h('span', { class: 'grow' }),
-        h('button', { class: 'btn small primary', disabled: !b.total, onClick: () => openStudyLauncher({ scope: 'topic', id, title: topic.name, block: b.id }) }, 'Учить блок'),
-        h('button', { class: 'btn small', onClick: async () => {
-          const name = await promptDialog('Переименовать блок', 'Название блока', { value: b.name });
-          if (!name || name === b.name) return;
-          try { await api.editBlock(b.id, name); await reload(); } catch (e) { toast(e.message, 'error'); }
-        } }, 'Переименовать'),
-        h('button', { class: 'btn small danger-ghost', onClick: async () => {
-          if (!(await confirmDialog(`Удалить блок «${b.name}»? Карточки (${b.total}) останутся в теме без блока.`))) return;
-          try { await api.delBlock(b.id); await reload(); toast('Блок удалён'); } catch (e) { toast(e.message, 'error'); }
-        } }, 'Удалить блок')) : null);
+      // открытый блок: компактная кнопка «⚙️ Редактировать блок», раскрывает переименование и удаление (учить — большой кнопкой вверху)
+      b ? h('details', { class: 'block-edit' },
+        h('summary', null, h('span', { class: 'emoji' }, '⚙️'), h('span', null, 'Редактировать блок')),
+        h('div', { class: 'block-edit-body' },
+          h('p', { class: 'small muted' }, `«${b.name}» · ${b.total} карт. · выучено ${b.total ? Math.round((b.learned / b.total) * 100) : 0}% · к повторению ${b.due}`),
+          h('div', { class: 'row gap wrap' },
+            h('button', { class: 'btn small', onClick: async () => {
+              const name = await promptDialog('Переименовать блок', 'Название блока', { value: b.name });
+              if (!name || name === b.name) return;
+              try { await api.editBlock(b.id, name); await reload(); } catch (e) { toast(e.message, 'error'); }
+            } }, 'Переименовать'),
+            h('button', { class: 'btn small danger-ghost', onClick: async () => {
+              if (!(await confirmDialog(`Удалить блок «${b.name}»? Карточки (${b.total}) останутся в теме без блока.`))) return;
+              try { await api.delBlock(b.id); await reload(); toast('Блок удалён'); } catch (e) { toast(e.message, 'error'); }
+            } }, 'Удалить блок')))) : null);
   }
 
   /* ---------- выбор нескольких карточек: долгое нажатие включает режим, дальше обычные нажатия ---------- */
