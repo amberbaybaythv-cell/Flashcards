@@ -189,7 +189,7 @@ export async function renderTopic({ main, id }) {
   }
 
   function blocksBar() {
-    if (!cards.length && !info.blocks.length) return null;
+    if (!info.blocks.length) return null; // блоков нет — строка не нужна; создать блок можно в ⚙️ темы
     const chip = (key, label, n) => h('button', { class: 'chip', type: 'button', 'aria-pressed': String(blockFilter === key), onClick: () => setFilter(key) }, label, h('span', { class: 'n' }, n));
     const b = activeBlock();
     // стрелка рядом с «Все» сворачивает всю строку блоков; выбор запоминается (общий для всех тем)
@@ -205,8 +205,6 @@ export async function renderTopic({ main, id }) {
         if (info.none.total) chips.push(chip('none', 'Без блока', info.none.total));
         info.blocks.forEach((b) => chips.push(chip(String(b.id), b.name, b.total)));
       }
-      chips.push(h('button', { class: 'chip add', type: 'button', onClick: async () => { const b = await newBlock(); if (b) { await reload(); setFilter(b.id); } } }, '+ Блок'));
-      if (cards.length >= 2) chips.push(h('button', { class: 'chip add', type: 'button', title: 'Разложить карточки без блока по группам одинакового размера', onClick: splitIntoBlocks }, 'Разделить на блоки…'));
     } else if (blockFilter === 'none') {
       chips.push(chip('none', 'Без блока', info.none.total)); // чтобы было видно, что показан не весь список
     } else if (b) {
@@ -387,6 +385,8 @@ export async function renderTopic({ main, id }) {
       h('p', { class: 'muted small' }, `${topic.name} · ${cardsWord(cards.length)}`),
       h('div', { class: 'stack tight' },
         h('button', { class: 'btn', onClick: () => { close(); openBulkImport(topic, reload, { blockId: filterBlockId() }); } }, 'Импорт текстом'),
+        h('button', { class: 'btn', onClick: async () => { close(); const b = await newBlock(); if (b) { await reload(); setFilter(b.id); } } }, '+ Новый блок'),
+        cards.length >= 2 ? h('button', { class: 'btn', title: 'Разложить карточки без блока по группам одинакового размера', onClick: () => { close(); splitIntoBlocks(); } }, 'Разделить на блоки…') : null,
         h('button', { class: 'btn', onClick: () => { close(); openTopicForm(topic.module_id, topic); } }, 'Переименовать'),
         h('button', { class: 'btn', disabled: !cards.length, onClick: () => api.downloadTopic(id) }, 'Экспорт текст'),
         h('button', { class: 'btn danger-ghost', onClick: async () => {
